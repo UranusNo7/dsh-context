@@ -19,6 +19,7 @@ import { watchFleetTab } from './fleetTab'
 import { makeAgentHeads } from './agentHeads'
 import { watchHistoryFaces } from './historyPage'
 import { resetVersionSource } from './versionSource'
+import { resetOverviewCache } from './overviewCache'
 import { registerCostRefresh, resetCostRefresh } from './costRefresh'
 import { watchPlacement } from './placement'
 import { watchSidebarContextTab } from './sidebar'
@@ -80,6 +81,7 @@ function apply(ctx: ClientCtx): void {
     resetTimelineDetailStores()
     clearAttachmentPaths()
     resetVersionSource()
+    resetOverviewCache()
     resetCostRefresh()
     disposeRetention()
   }, 'dsh-context: warm-up timers')
