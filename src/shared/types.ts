@@ -178,6 +178,8 @@ export type DefaultOverviewRange = 'today' | '7d' | '30d' | 'all'
 
 export type FleetTab = 'show' | 'hide'
 
+export type DisplayCurrency = 'auto' | 'usd' | 'cny'
+
 export interface PluginSettings {
   defaultPlacement: DefaultPlacement
   defaultGranularity: DefaultGranularity
@@ -190,6 +192,7 @@ export interface PluginSettings {
   overviewAutoSteps: OverviewAutoSteps
   defaultOverviewRange: DefaultOverviewRange
   fleetTab: FleetTab
+  displayCurrency: DisplayCurrency
   promptPrefix: string
   promptSuffix: string
 }
@@ -585,6 +588,17 @@ export interface OverviewPartTotal {
   value: number
 }
 
+export interface OverviewModelUsage {
+  provider: string
+  model: string
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  outputTokens: number
+  totalTokens: number
+  costUsd: number | null
+}
+
 export interface OverviewSummary {
   sessions: number
   sessionsTotal: number
@@ -599,6 +613,7 @@ export interface OverviewSummary {
   tokenParts: OverviewPartTotal[] | null
   timing: TimingTotals | null
   coverage: BackfillCoverage
+  models?: OverviewModelUsage[]
 }
 
 export interface OverviewDay {

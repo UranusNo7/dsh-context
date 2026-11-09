@@ -40,6 +40,7 @@ export interface AgentGraphProps {
   pinnedId?: string | null
   hoverId?: string | null
   focusId?: string | null
+  currency?: CostCurrency
   onHover?: (id: string | null) => void
   onSelect?: (id: string) => void
   inspector?: boolean
@@ -90,7 +91,7 @@ export function makeAgentGraph(
     const pinnedId = props.pinnedId ?? null
     const litId = hoverId ?? pinnedId ?? props.focusId ?? null
     const onHover = props.onHover ?? setInternalHover
-    const currency = displayCurrencyOf(ctx.locale)
+    const currency = props.currency ?? displayCurrencyOf(ctx.locale)
 
     const stageRef = useRef<HTMLDivElement | null>(null)
     const heardFocus = props.focusId ?? null

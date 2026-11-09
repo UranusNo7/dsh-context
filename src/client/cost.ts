@@ -1,4 +1,5 @@
 import type { LocaleService } from './services'
+import { currencyOf } from './currency'
 import type { CostCurrency } from '../shared/pricing'
 
 export * from '../shared/pricing'
@@ -9,7 +10,7 @@ export function formatCost(amount: number, currency: CostCurrency): string {
 }
 
 export function displayCurrencyOf(locale: LocaleService): CostCurrency {
-  return typeof locale.getLocale === 'function' && locale.getLocale().active === 'zh' ? 'cny' : 'usd'
+  return currencyOf('auto', typeof locale.getLocale === 'function' ? locale.getLocale().active : 'en')
 }
 
 export function formatPriceRate(amount: number, currency: CostCurrency): string {

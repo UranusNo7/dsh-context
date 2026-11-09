@@ -238,6 +238,17 @@ function PreferenceRows(props: { t: Translate; state: SettingsState; set?: Setti
           ]}
           onPick={(id) => { set?.('defaultFileSort', id) }}
         />
+        <PrefRow
+          label={t('settings.currency')}
+          value={state.displayCurrency}
+          disabled={disabled}
+          options={[
+            { id: 'auto', label: t('currency.auto') },
+            { id: 'usd', label: t('currency.usd') },
+            { id: 'cny', label: t('currency.cny') },
+          ]}
+          onPick={(id) => { set?.('displayCurrency', id) }}
+        />
       </Group>
       <Group title={t('settings.group.prompt')}>
         <p className="lc-settings-note">{t('settings.promptHint')}</p>

@@ -20,6 +20,7 @@ import type {
   TimingTotals,
 } from '../shared/types'
 import type { CostSource } from './cost'
+import { modelsOf } from './overviewModels'
 import { TIMING_OPTIONAL, numOf, optionalNumOf, type HostRow, type HostTimeline, type WorkspaceState } from './overviewCorpus'
 import { asRecord } from './record'
 
@@ -308,7 +309,7 @@ export function summaryOf(
     sessionsTotal: allRows.length,
     sessionsArchived,
     archivedScoped: sessionsArchived,
-    tokens: splitTotal ?? totals?.total ?? 0,
+    tokens: totals?.total ?? splitTotal ?? 0,
     turns,
     costUsd: cost.usd(usage),
     costSessions,
@@ -317,6 +318,7 @@ export function summaryOf(
     tokenParts: split === null ? null : split.parts,
     timing: timingSumOf(rows),
     coverage,
+    models: modelsOf(usage, cost),
   }
 }
 

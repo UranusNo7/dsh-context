@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
-  BackfillCoverage, OverviewDay, OverviewPage, OverviewPartTotal, OverviewRequest, OverviewScope,
-  OverviewSummary, OverviewTally, OverviewTallyStat, OverviewValue, TimingTotals,
+  BackfillCoverage, OverviewDay, OverviewModelUsage, OverviewPage, OverviewPartTotal, OverviewRequest,
+  OverviewScope, OverviewSummary, OverviewTally, OverviewTallyStat, OverviewValue, TimingTotals,
 } from '../shared/types'
 import { BACKFILL_ROUTE, OVERVIEW_ROUTE } from './apiRoutes'
 import { postRoute } from './route'
 import { asRecord } from './services'
 import { subscribeInvalidations } from './invalidation'
 import { notePricingPending } from './costRefresh'
+import { readOverviewPart, resetOverviewCache, touchOverviewPart, writeOverviewPart } from './overviewCache'
 
 const POLL_MS = 30_000
 
@@ -71,6 +72,28 @@ function coverageOf(value: unknown): BackfillCoverage | null {
   }
 }
 
+function modelsOf(value: unknown): OverviewModelUsage[] | null {
+  if (!Array.isArray(value)) return null
+  const models: OverviewModelUsage[] = []
+  for (const entry of value) {
+    const data = asRecord(entry)
+    if (data === null) continue
+    const provider = typeof data.provider === 'string' ? data.provider : undefined
+    const model = stringOf(data.model)
+    const inputTokens = nonNegativeOf(data.inputTokens)
+    const cacheReadTokens = nonNegativeOf(data.cacheReadTokens)
+    const cacheWriteTokens = nonNegativeOf(data.cacheWriteTokens)
+    const outputTokens = nonNegativeOf(data.outputTokens)
+    const totalTokens = nonNegativeOf(data.totalTokens)
+    if (provider === undefined || model === undefined || inputTokens === null || cacheReadTokens === null
+      || cacheWriteTokens === null || outputTokens === null || totalTokens === null) continue
+    const costUsd = data.costUsd === null || data.costUsd === undefined ? null : numOf(data.costUsd)
+    if (data.costUsd !== null && data.costUsd !== undefined && costUsd === null) continue
+    models.push({ provider, model, inputTokens, cacheReadTokens, cacheWriteTokens, outputTokens, totalTokens, costUsd })
+  }
+  return models
+}
+
 function summaryOf(value: unknown): OverviewSummary | null {
   const data = asRecord(value)
   if (data === null) return null
@@ -86,6 +109,8 @@ function summaryOf(value: unknown): OverviewSummary | null {
     || costSessions === null || usageSessions === null || coverage === null) return null
   if (costUsd === null && data.costUsd !== null) return null
   const cacheHit = data.cacheHit === null ? null : stringOf(data.cacheHit) ?? null
+  const models = data.models === undefined ? undefined : modelsOf(data.models)
+  if (models === null) return null
   return {
     sessions,
     sessionsTotal,
@@ -100,6 +125,7 @@ function summaryOf(value: unknown): OverviewSummary | null {
     tokenParts: data.tokenParts === null ? null : partsOf(data.tokenParts),
     timing: timingOf(data.timing),
     coverage,
+    ...(models === undefined ? {} : { models }),
   }
 }
 
@@ -229,10 +255,8 @@ interface PartOptions<T> {
   pick: (value: OverviewValue) => T | null
 }
 
-let lastRevision: string | null = null
-
 export function resetOverviewRevision(): void {
-  lastRevision = null
+  resetOverviewCache()
 }
 
 function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
@@ -241,12 +265,13 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
   const pickRef = useRef(pick)
   pickRef.current = pick
   const [data, setData] = useState<T | null>(null)
+  const [dataKey, setDataKey] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [stale, setStale] = useState(false)
   const [error, setError] = useState(false)
   const [revision, setRevision] = useState<string | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled || request === null) {
       setPending(false)
       return
@@ -263,6 +288,18 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
         timers.refresh = null
       }
     }
+    const restore = (): void => {
+      const cached = readOverviewPart(key)
+      if (cached === undefined) return
+      const restored = pickRef.current(cached)
+      if (restored === null) return
+      setData(restored)
+      setDataKey(key)
+      setRevision(cached.revision)
+      pricingReady.current = cached.pricingReady
+      notePricingPending(cached.pricingReady)
+    }
+    restore()
     const fetchNow = async (): Promise<void> => {
       if (busy()) {
         live.queued = true
@@ -271,7 +308,8 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
       live.inFlight = true
       setPending(true)
       try {
-        const body: OverviewRequest = { ...request, revision: lastRevision }
+        const known = readOverviewPart(key)
+        const body: OverviewRequest = { ...request, revision: known === undefined ? null : known.revision }
         const read = await postRoute(OVERVIEW_ROUTE, body, overviewValueOf, { label: 'overview ' + request.part })
         if (stopped()) return
         if (read === null) {
@@ -279,19 +317,21 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
           setStale(true)
           return
         }
-        lastRevision = read.revision
         setRevision(read.revision)
         setError(false)
         if ('unchanged' in read) {
+          touchOverviewPart(key)
           notePricingPending(pricingReady.current)
           setStale(false)
           return
         }
+        writeOverviewPart(key, read)
         pricingReady.current = read.pricingReady
         notePricingPending(read.pricingReady)
         const picked = pickRef.current(read)
         if (picked === null) return
         setData(picked)
+        setDataKey(key)
         setStale(false)
       } catch {
         if (!stopped()) {
@@ -300,10 +340,12 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
         }
       } finally {
         live.inFlight = false
-        setPending(false)
-        if (queued() && !stopped()) {
-          live.queued = false
-          void fetchNow()
+        if (!stopped()) {
+          setPending(false)
+          if (queued()) {
+            live.queued = false
+            void fetchNow()
+          }
         }
       }
     }
@@ -327,7 +369,14 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
     }
   }, [key, enabled])
 
-  return { data, pending, stale, error, revision }
+  const visible = dataKey === null ? false : request === null || dataKey === key
+  return {
+    data: visible ? data : null,
+    pending,
+    stale,
+    error,
+    revision: visible ? revision : null,
+  }
 }
 
 const pickSummary = (value: OverviewValue): { summary: OverviewSummary; pricingReady: boolean } | null =>

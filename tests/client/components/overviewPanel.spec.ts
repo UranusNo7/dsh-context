@@ -190,6 +190,30 @@ describe('OverviewPanel', () => {
     await m.unmount()
   })
 
+  test('the composition donut centers the real billed total while its rows stay rounded category estimates', async () => {
+    stubRoutes({
+      summary: () => ({
+        revision: 'rev-summary',
+        pricingReady: true,
+        summary: summaryRaw({
+          tokens: 5000,
+          tokenParts: [
+            { key: 'system', value: 1200 },
+            { key: 'tools', value: 800 },
+          ],
+        }),
+      }),
+    })
+    const { m } = await openPanel(makeCtx())
+    const card = queryAll(m.container, '.lc-ov-stats > .lc-card')[0]
+    assert.equal(query(card, '.lc-donut-center b').textContent, '5.0k', 'the center is the host summary total, not the summed estimates')
+    const rows = queryAll(card, '.lc-sl-row')
+    assert.equal(rows.length, 2)
+    assert.deepEqual(rows.map(row => row.querySelector('.lc-sl-pct')?.textContent), ['24.0%', '16.0%'])
+    assert.deepEqual(rows.map(row => row.querySelector('.lc-sl-sub')?.textContent), ['≈1.2k', '≈800'])
+    await m.unmount()
+  })
+
   test('the KPI band dashes until the summary lands; the page drives the list and its cost labels meanwhile', async () => {
     let releaseSummary: ((value: unknown) => void) | null = null
     stubRoutes({ summary: () => new Promise<unknown>((resolve) => { releaseSummary = resolve }) })

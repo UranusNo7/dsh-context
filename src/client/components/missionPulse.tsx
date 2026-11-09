@@ -729,6 +729,7 @@ export function MissionPulse(props: MissionPulseProps): ReactElement {
               pinnedId={selectedAgent}
               hoverId={hoveredAgent}
               focusId={props.focusMember}
+              currency={props.currency}
               onHover={setHoveredAgent}
               onSelect={selectAgent}
               inspector={false}

@@ -49,6 +49,7 @@ describe('createContextSettings defaults', () => {
       overviewAutoSteps: '100',
       overviewRange: '30d',
       fleetTab: 'show',
+      displayCurrency: 'auto',
       promptPrefix: '',
       promptSuffix: '',
       writable: false,
@@ -139,6 +140,8 @@ describe('set', () => {
       ['insightsEntry', 'show', 'hide', 'hide', s => s.insightsEntry()],
       ['fleetTab', 'hide', undefined, 'show', s => s.fleetTab()],
       ['fleetTab', 'show', 'hide', 'hide', s => s.fleetTab()],
+      ['displayCurrency', 'cny', undefined, 'auto', s => s.displayCurrency()],
+      ['displayCurrency', 'usd', 'cny', 'cny', s => s.displayCurrency()],
     ]
     for (const [field, picked, truth, expected, read] of cases) {
       const s = createContextSettings()
@@ -189,6 +192,7 @@ describe('attach', () => {
         overviewAutoSteps: '300',
         defaultOverviewRange: '7d',
         fleetTab: 'hide',
+        displayCurrency: 'cny',
         promptPrefix: 'Be terse.',
         promptSuffix: 'Sign as Atlas.',
       },
@@ -208,6 +212,7 @@ describe('attach', () => {
       overviewAutoSteps: '300',
       overviewRange: '7d',
       fleetTab: 'hide',
+      displayCurrency: 'cny',
       promptPrefix: 'Be terse.',
       promptSuffix: 'Sign as Atlas.',
       writable: true,
@@ -227,6 +232,7 @@ describe('attach', () => {
     assert.equal(defaults.insightsEntry(), 'show')
     assert.equal(defaults.overviewAutoSteps(), '200')
     assert.equal(defaults.defaultOverviewRange(), 'all')
+    assert.equal(defaults.displayCurrency(), 'auto')
   })
 
   test('an unavailable snapshot keeps parsed preferences; any other status reads as loading', () => {
@@ -255,6 +261,7 @@ describe('attach', () => {
         overviewAutoSteps: '100',
         overviewRange: '30d',
         fleetTab: 'show',
+        displayCurrency: 'auto',
         promptPrefix: '',
         promptSuffix: '',
         writable: false,
@@ -266,7 +273,7 @@ describe('attach', () => {
     const s = createContextSettings()
     s.attach(new TestSettingsScope({
       status: 'ready',
-      value: { defaultPlacement: 'window', defaultGranularity: 'bogus', defaultTrendMode: 7, defaultDeltaBase: 'bogus', defaultToolSort: 'alpha', defaultFileSort: 'alpha', insightsEntry: 42, defaultDurationCurve: 'always', overviewAutoSteps: 200, defaultOverviewRange: 'week', fleetTab: 7, promptPrefix: 9, promptSuffix: {} },
+      value: { defaultPlacement: 'window', defaultGranularity: 'bogus', defaultTrendMode: 7, defaultDeltaBase: 'bogus', defaultToolSort: 'alpha', defaultFileSort: 'alpha', insightsEntry: 42, defaultDurationCurve: 'always', overviewAutoSteps: 200, defaultOverviewRange: 'week', fleetTab: 7, displayCurrency: 'eur', promptPrefix: 9, promptSuffix: {} },
       writable: false,
     }))
     assert.equal(s.defaultPlacement(), 'all')
@@ -280,6 +287,7 @@ describe('attach', () => {
     assert.equal(s.overviewAutoSteps(), '100')
     assert.equal(s.defaultOverviewRange(), '30d')
     assert.equal(s.fleetTab(), 'show')
+    assert.equal(s.displayCurrency(), 'auto', 'an unknown currency degrades to auto')
     assert.equal(s.store.getSnapshot().promptPrefix, '', 'a non-string prompt value degrades to the empty default')
     assert.equal(s.store.getSnapshot().promptSuffix, '')
   })
@@ -291,6 +299,7 @@ describe('attach', () => {
       ['defaultDurationCurve', 'hide', 'always', 'show', () => s.defaultDurationCurve()],
       ['overviewAutoSteps', '200', '50', '100', () => s.overviewAutoSteps()],
       ['defaultOverviewRange', '7d', 'quarter', '30d', () => s.defaultOverviewRange()],
+      ['displayCurrency', 'usd', 'eur', 'auto', () => s.displayCurrency()],
     ]
     let s = createContextSettings()
     for (const [field, prior, invalid, expected, read] of cases) {
@@ -310,6 +319,7 @@ describe('attach', () => {
     s.set('defaultDurationCurve', 'hide')
     s.set('overviewAutoSteps', '100')
     s.set('defaultOverviewRange', 'today')
+    s.set('displayCurrency', 'usd')
     s.set('promptPrefix', 'drafted')
     s.attach(new TestSettingsScope({ status: 'ready', value: { defaultFileSort: 'latest' }, writable: false }))
     assert.equal(s.defaultPlacement(), 'tab', 'the in-session choice survives a section without the field')
@@ -321,6 +331,7 @@ describe('attach', () => {
     assert.equal(s.defaultDurationCurve(), 'hide', 'the in-session curve choice survives a section without the field')
     assert.equal(s.overviewAutoSteps(), '100', 'the in-session auto-overview choice survives a section without the field')
     assert.equal(s.defaultOverviewRange(), 'today', 'the in-session overview range survives a section without the field')
+    assert.equal(s.displayCurrency(), 'usd', 'the in-session currency survives a section without the field')
     assert.equal(s.store.getSnapshot().promptPrefix, 'drafted', 'the in-session prompt text survives a section without the field')
   })
 
@@ -398,6 +409,7 @@ describe('attach', () => {
       overviewAutoSteps: '100',
       overviewRange: '30d',
       fleetTab: 'show',
+      displayCurrency: 'auto',
       promptPrefix: '',
       promptSuffix: '',
       writable: true,

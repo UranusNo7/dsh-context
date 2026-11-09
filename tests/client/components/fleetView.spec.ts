@@ -6,6 +6,7 @@ import { makeAgentHeads } from '../../../src/client/agentHeads'
 import { DICT_EN } from '../../../src/client/i18n'
 import { resetTimelineDetailStores } from '../../../src/client/timelineSource'
 import { requestFleetMemberFocus, currentFleetMemberFocus } from '../../../src/client/viewFocus'
+import { createContextSettings } from '../../../src/client/settings'
 import { TestClientCtx, asClientCtx } from '../helpers/harness'
 import { click, makeKit, mount, query, queryAll, text, until } from '../helpers/kit'
 import { makeScroller, mountInScroller, projectionsFor, richTimeline } from './contextViewHarness'
@@ -31,7 +32,7 @@ function emptyFleetRoute(): void {
 }
 
 function makeView(ctx: TestClientCtx) {
-  return makeFleetView(asClientCtx(ctx), kit, makeAgentHeads())
+  return makeFleetView(asClientCtx(ctx), kit, makeAgentHeads(), createContextSettings())
 }
 
 describe('FleetView Mission Pulse states', () => {
