@@ -185,3 +185,28 @@ body:not([data-ds-dark-theme]) .lc-ov-session { border-radius: 12px; box-shadow:
 .lc-ov-pager-btn:hover:enabled { border-color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover); }
 .lc-ov-pager-btn:disabled { opacity: 0.4; cursor: default; }
 .lc-ov-pager-n { color: var(--dsw-alias-label-secondary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.lc-ov-models-row { min-width: 0; margin-bottom: 10px; }
+.lc-ov-models { min-width: 0; margin-bottom: 0; }
+.lc-ov-models .lc-card-sub { margin-left: 8px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; }
+.lc-ov-models-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lc-ov-models-table th, .lc-ov-models-table td { padding: 5px 8px; border-top: var(--lc-line-fine, 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 60%, transparent)); text-align: left; vertical-align: top; }
+.lc-ov-models-table thead th { border-top: 0; padding-top: 2px; padding-bottom: 4px; color: var(--dsw-alias-label-secondary); font-weight: 500; font-size: 11px; white-space: nowrap; }
+.lc-ov-models-table .lc-ov-models-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lc-ov-models-name { display: block; font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.lc-ov-models-provider { display: block; font-size: 10px; line-height: 1.4; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.lc-ov-models-cost { font-weight: 600; }
+@container lc-card (max-width: 640px) {
+  .lc-ov-models-table thead { display: none; }
+  .lc-ov-models-table, .lc-ov-models-table tbody, .lc-ov-models-table tr, .lc-ov-models-table td { display: block; }
+  .lc-ov-models-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; padding: 8px 0; border-top: var(--lc-line-fine, 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 60%, transparent)); }
+  .lc-ov-models-table tr:first-child { border-top: 0; }
+  .lc-ov-models-table td { padding: 0; border-top: 0; text-align: left; }
+  .lc-ov-models-table td:first-child { grid-column: 1 / -1; }
+  .lc-ov-models-table td.lc-ov-models-num { text-align: left; }
+  .lc-ov-models-table td.lc-ov-models-num::before { content: attr(data-label); display: block; font-size: 10px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
+}
+@container lc-card (max-width: 380px) {
+  .lc-ov-models-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lc-ov-currency { flex: none; }

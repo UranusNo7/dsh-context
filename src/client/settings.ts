@@ -1,4 +1,4 @@
-import type { DefaultDeltaBase, DefaultFileSort, DefaultGranularity, DefaultDurationCurve, DefaultOverviewRange, DefaultPlacement, DefaultToolSort, DefaultTrendMode, FleetTab, InsightsEntry, OverviewAutoSteps, SettingsField } from '../shared/types'
+import type { DefaultDeltaBase, DefaultFileSort, DefaultGranularity, DefaultDurationCurve, DefaultOverviewRange, DefaultPlacement, DefaultToolSort, DefaultTrendMode, DisplayCurrency, FleetTab, InsightsEntry, OverviewAutoSteps, SettingsField } from '../shared/types'
 
 export type { DefaultDeltaBase, DefaultFileSort, DefaultToolSort, SettingsField } from '../shared/types'
 
@@ -30,6 +30,7 @@ export interface SettingsState {
   overviewAutoSteps: OverviewAutoSteps
   overviewRange: DefaultOverviewRange
   fleetTab: FleetTab
+  displayCurrency: DisplayCurrency
   promptPrefix: string
   promptSuffix: string
   writable: boolean
@@ -48,6 +49,7 @@ export interface ContextSettings {
   overviewAutoSteps(): OverviewAutoSteps
   defaultOverviewRange(): DefaultOverviewRange
   fleetTab(): FleetTab
+  displayCurrency(): DisplayCurrency
   attach(scope: SettingsScopeLike): () => void
   set(field: SettingsField, value: string): void
 }
@@ -64,6 +66,7 @@ type Prefs = {
   overviewAutoSteps?: OverviewAutoSteps
   overviewRange?: DefaultOverviewRange
   fleetTab?: FleetTab
+  displayCurrency?: DisplayCurrency
   promptPrefix?: string
   promptSuffix?: string
 }
@@ -83,13 +86,21 @@ function prefsOf(value: unknown): Prefs {
     ...(v.overviewAutoSteps === '100' || v.overviewAutoSteps === '200' || v.overviewAutoSteps === '300' || v.overviewAutoSteps === 'off' ? { overviewAutoSteps: v.overviewAutoSteps } : {}),
     ...(v.defaultOverviewRange === 'today' || v.defaultOverviewRange === '7d' || v.defaultOverviewRange === '30d' || v.defaultOverviewRange === 'all' ? { overviewRange: v.defaultOverviewRange } : {}),
     ...(v.fleetTab === 'show' || v.fleetTab === 'hide' ? { fleetTab: v.fleetTab } : {}),
+    ...(v.displayCurrency === 'auto' || v.displayCurrency === 'usd' || v.displayCurrency === 'cny' ? { displayCurrency: v.displayCurrency } : {}),
     ...(typeof v.promptPrefix === 'string' ? { promptPrefix: v.promptPrefix } : {}),
     ...(typeof v.promptSuffix === 'string' ? { promptSuffix: v.promptSuffix } : {}),
   }
 }
 
+type GateTruth = {
+  placement?: DefaultPlacement
+  insightsEntry?: InsightsEntry
+  fleetTab?: FleetTab
+  displayCurrency?: DisplayCurrency
+}
+
 export function createContextSettings(): ContextSettings {
-  let state: SettingsState = { status: 'loading', placement: 'all', granularity: 'step', mode: 'total', deltaBase: 'step', toolSort: 'count', fileSort: 'lines', insightsEntry: 'show', durationCurve: 'show', overviewAutoSteps: '100', overviewRange: '30d', fleetTab: 'show', promptPrefix: '', promptSuffix: '', writable: false }
+  let state: SettingsState = { status: 'loading', placement: 'all', granularity: 'step', mode: 'total', deltaBase: 'step', toolSort: 'count', fileSort: 'lines', insightsEntry: 'show', durationCurve: 'show', overviewAutoSteps: '100', overviewRange: '30d', fleetTab: 'show', displayCurrency: 'auto', promptPrefix: '', promptSuffix: '', writable: false }
   let scope: SettingsScopeLike | undefined
   const listeners = new Set<() => void>()
   const unchanged = (a: SettingsState, b: SettingsState): boolean =>
@@ -99,7 +110,7 @@ export function createContextSettings(): ContextSettings {
     state = next
     for (const listener of listeners) listener()
   }
-  const sync = (bound: SettingsScopeLike): { placement?: DefaultPlacement; insightsEntry?: InsightsEntry; fleetTab?: FleetTab } => {
+  const sync = (bound: SettingsScopeLike): GateTruth => {
     const snap = bound.getSnapshot()
     let prefs: Prefs = {}
     let raw: Record<string, unknown> | undefined
@@ -120,11 +131,17 @@ export function createContextSettings(): ContextSettings {
       overviewAutoSteps: prefs.overviewAutoSteps ?? (raw?.overviewAutoSteps === undefined ? state.overviewAutoSteps : '100'),
       overviewRange: prefs.overviewRange ?? (raw?.defaultOverviewRange === undefined ? state.overviewRange : '30d'),
       fleetTab: prefs.fleetTab ?? (raw?.fleetTab === undefined ? state.fleetTab : 'show'),
+      displayCurrency: prefs.displayCurrency ?? (raw?.displayCurrency === undefined ? state.displayCurrency : 'auto'),
       promptPrefix: prefs.promptPrefix ?? (raw?.promptPrefix === undefined ? state.promptPrefix : ''),
       promptSuffix: prefs.promptSuffix ?? (raw?.promptSuffix === undefined ? state.promptSuffix : ''),
       writable: snap.writable,
     })
-    return { placement: prefs.placement, insightsEntry: prefs.insightsEntry, fleetTab: prefs.fleetTab }
+    return {
+      placement: prefs.placement,
+      insightsEntry: prefs.insightsEntry,
+      fleetTab: prefs.fleetTab,
+      displayCurrency: prefs.displayCurrency,
+    }
   }
   return {
     store: {
@@ -145,6 +162,7 @@ export function createContextSettings(): ContextSettings {
     overviewAutoSteps: () => state.overviewAutoSteps,
     defaultOverviewRange: () => state.overviewRange,
     fleetTab: () => state.fleetTab,
+    displayCurrency: () => state.displayCurrency,
     attach(bound) {
       scope = bound
       sync(bound)
@@ -164,6 +182,7 @@ export function createContextSettings(): ContextSettings {
         if (field === 'defaultPlacement' && truth.placement === undefined) refused.placement = 'all'
         else if (field === 'insightsEntry' && truth.insightsEntry === undefined) refused.insightsEntry = 'show'
         else if (field === 'fleetTab' && truth.fleetTab === undefined) refused.fleetTab = 'show'
+        else if (field === 'displayCurrency' && truth.displayCurrency === undefined) refused.displayCurrency = 'auto'
         if (Object.keys(refused).length > 0) publish({ ...state, ...refused })
       })
     },

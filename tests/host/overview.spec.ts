@@ -63,8 +63,8 @@ describe('dsh-context overview route', () => {
     assert.equal(summary.sessionsTotal, 2)
     assert.equal(summary.sessionsArchived, 0)
     assert.equal(summary.archivedScoped, 0)
-    assert.equal(summary.tokens, summary.tokenParts?.reduce((sum, part) => sum + part.value, 0), 'tokens equal the pure billed split total')
-    assert.ok(Math.abs(summary.tokens - expectedTokens) <= 2, 'the split stays within rounding of the billed total')
+    assert.equal(summary.tokens, expectedTokens, 'tokens equal the complete-scope billed four-bucket total')
+    assert.ok(Math.abs((summary.tokenParts?.reduce((sum, part) => sum + part.value, 0) ?? 0) - expectedTokens) <= 2, 'the composition split stays within rounding of the billed total')
     assert.equal(summary.turns, 5)
     assert.equal(summary.costUsd, costOfUsage(merged))
     assert.equal(summary.costSessions, 2)
@@ -409,6 +409,108 @@ describe('dsh-context overview route', () => {
     harness.state.backfillVersion = 1
     await call(harness, { part: 'summary' })
     assert.equal(listed, 2, 'a backfill version change forces a fresh scan')
+  })
+
+  test('summary lists host-priced usage for every provider and model in scope, and the model costs add up to the total', async () => {
+    const flash = { off: { uncached: 100, cacheRead: 50, cacheWrite: 10, output: 20 } }
+    const pro = { off: { uncached: 40, cacheRead: 0, cacheWrite: 0, output: 8 } }
+    const shared = { off: { uncached: 7, cacheRead: 3, cacheWrite: 1, output: 2 } }
+    const usage: SessionCostUsage = {
+      deepseek: { 'deepseek-v4-flash': flash, 'deepseek-v4-pro': pro },
+      openai: { 'deepseek-v4-flash': shared },
+    }
+    const harness = await boot({
+      records: [recordOf('a'), recordOf('b')],
+      values: {
+        a: { contextTimeline: timelineOf({ cost: { deepseek: { 'deepseek-v4-flash': flash }, openai: { 'deepseek-v4-flash': shared } } }) },
+        b: { contextTimeline: timelineOf({ cost: { deepseek: { 'deepseek-v4-pro': pro } } }) },
+      },
+    })
+    const summary = summaryOf(await call(harness, { part: 'summary' }))
+    assert.deepEqual(summary.models?.map(entry => [entry.provider, entry.model, entry.totalTokens]), [
+      ['deepseek', 'deepseek-v4-flash', 180],
+      ['deepseek', 'deepseek-v4-pro', 48],
+      ['openai', 'deepseek-v4-flash', 13],
+    ])
+    const billed = usageTotalsOf(usage)
+    assert.equal(summary.models?.reduce((sum, entry) => sum + entry.totalTokens, 0), billed.uncachedInputTokens + billed.cacheReadTokens + billed.cacheWriteTokens + billed.outputTokens)
+    assert.equal(summary.models?.reduce((sum, entry) => sum + entry.totalTokens, 0), summary.tokens)
+    assert.equal(summary.costUsd, costOfUsage(usage))
+    const modelCost = summary.models?.reduce((sum, entry) => sum + (entry.costUsd ?? 0), 0) ?? 0
+    assert.ok(summary.costUsd !== null && Math.abs(modelCost - summary.costUsd) < 1e-9, 'the model costs cover the summary total')
+  })
+
+  test('summary scopes per-model usage with the same window as the totals', async () => {
+    const harness = await boot({
+      records: [recordOf('a')],
+      values: {
+        a: {
+          contextTimeline: timelineOf({ cost: usageOf(999, 0, 0, 0) }),
+          contextActivity: {
+            days: {
+              '2026-10-01': dayOf(11, 1, { cost: usageOf(11, 0, 0, 0) }),
+              '2026-11-01': dayOf(22, 2, { cost: { openai: { 'gpt-x': { off: { uncached: 22, cacheRead: 0, cacheWrite: 0, output: 0 } } } } }),
+            },
+          },
+        },
+      },
+    })
+    const all = summaryOf(await call(harness, { part: 'summary' }))
+    assert.deepEqual(all.models?.map(entry => [entry.provider, entry.model, entry.totalTokens]), [['deepseek', 'deepseek-v4-flash', 999]])
+    const ranged = summaryOf(await call(harness, { part: 'summary', scope: { range: { start: Date.UTC(2026, 9, 20), end: Date.UTC(2026, 10, 5) } } }))
+    assert.deepEqual(ranged.models?.map(entry => [entry.provider, entry.model, entry.totalTokens]), [['openai', 'gpt-x', 22]])
+    assert.equal(ranged.costUsd, costOfUsage({ openai: { 'gpt-x': { off: { uncached: 22, cacheRead: 0, cacheWrite: 0, output: 0 } } } }))
+    const older = summaryOf(await call(harness, { part: 'summary', scope: { day: '2026-10-01' } }))
+    assert.deepEqual(older.models?.map(entry => [entry.provider, entry.model, entry.totalTokens]), [['deepseek', 'deepseek-v4-flash', 11]])
+    const day = summaryOf(await call(harness, { part: 'summary', scope: { day: '2026-11-01' } }))
+    assert.deepEqual(day.models?.map(entry => entry.model), ['gpt-x'])
+  })
+
+  test('summary folds subagent model usage into the root row', async () => {
+    const rootUsage = usageOf(10, 0, 0, 1)
+    const childUsage: SessionCostUsage = { openai: { 'gpt-x': { off: { uncached: 20, cacheRead: 0, cacheWrite: 0, output: 2 } } } }
+    const harness = await boot({
+      records: [recordOf('root'), recordOf('child', { parentSession: 'root', origin: 'subagent' })],
+      values: {
+        root: { contextTimeline: timelineOf({ cost: rootUsage }) },
+        child: { contextTimeline: timelineOf({ cost: childUsage }) },
+      },
+    })
+    const summary = summaryOf(await call(harness, { part: 'summary' }))
+    assert.deepEqual(summary.models?.map(entry => [entry.provider, entry.model, entry.totalTokens]), [
+      ['openai', 'gpt-x', 22],
+      ['deepseek', 'deepseek-v4-flash', 11],
+    ])
+    assert.equal(summary.costUsd, costOfUsage({ deepseek: { 'deepseek-v4-flash': { off: { uncached: 10, cacheRead: 0, cacheWrite: 0, output: 1 } } }, openai: { 'gpt-x': { off: { uncached: 20, cacheRead: 0, cacheWrite: 0, output: 2 } } } }))
+  })
+
+  test('an unpriced model stays listed without cost and the summary total matches the priced models', async () => {
+    const harness = await boot({
+      records: [recordOf('priced'), recordOf('unpriced')],
+      values: {
+        priced: { contextTimeline: timelineOf({ cost: usageOf(10, 0, 0, 1) }) },
+        unpriced: { contextTimeline: timelineOf({ cost: { openai: { mystery: { off: { uncached: 20, cacheRead: 0, cacheWrite: 0, output: 2 } } } } }) },
+      },
+      costUnpriced: (_provider, model) => model === 'mystery',
+    })
+    const summary = summaryOf(await call(harness, { part: 'summary' }))
+    assert.deepEqual(summary.models?.map(entry => [entry.provider, entry.model, entry.totalTokens, entry.costUsd]), [
+      ['openai', 'mystery', 22, null],
+      ['deepseek', 'deepseek-v4-flash', 11, costOfUsage(usageOf(10, 0, 0, 1))],
+    ])
+    const modelCost = summary.models?.reduce((sum, entry) => sum + (entry.costUsd ?? 0), 0) ?? 0
+    assert.equal(summary.costUsd, costOfUsage(usageOf(10, 0, 0, 1)))
+    assert.equal(modelCost, summary.costUsd)
+    assert.equal(summary.costSessions, 1, 'a session with only unpriced usage contributes no money')
+    assert.equal(summary.usageSessions, 2)
+    const cold = await boot({
+      records: [recordOf('unpriced')],
+      values: { unpriced: { contextTimeline: timelineOf({ cost: { openai: { mystery: { off: { uncached: 20, cacheRead: 0, cacheWrite: 0, output: 0 } } } } }) } },
+      costUnpriced: () => true,
+    })
+    const coldSummary = summaryOf(await call(cold, { part: 'summary' }))
+    assert.equal(coldSummary.costUsd, null)
+    assert.deepEqual(coldSummary.models?.map(entry => [entry.model, entry.costUsd]), [['mystery', null]])
   })
 
   test('the served-key set is bounded so paging and filtering cannot grow it without limit', async () => {

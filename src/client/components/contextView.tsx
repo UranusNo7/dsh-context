@@ -17,6 +17,7 @@ import { commandsOf, programsOf, tallyOfCommands, viewsOf, surfaceSeqOf as comma
 import type { Command } from '../commands'
 import type { ContextSettings } from '../settings'
 import { overviewThresholdOf } from '../settings'
+import { activeLocaleOf, useDisplayCurrency } from '../currency'
 import type { ViewKit } from '../viewkit'
 import { IconCompareSplit, IconContextInjection } from '../primitives'
 import type { AgentHeads } from '../agentHeads'
@@ -124,6 +125,9 @@ export function makeContextView(
   function ContextViewBody(props: ContextViewProps): ReactElement {
     const sessionId = props.sessionId
     const inSidebar = props.host === 'sidebar'
+    const localeSvc = typeof ctx.get === 'function' ? ctx.get('locale') : undefined
+    const activeLocale = activeLocaleOf(localeSvc)
+    const currency = useDisplayCurrency(settings, activeLocale, kit)
     const { source, data, pressure, breakdown, usage } = useContextSession(props)
     const ensurePart = source.ensurePart
     const headers = projectionOf(props, 'contextHeaders', headersOf)
@@ -647,10 +651,6 @@ export function makeContextView(
 
     const trendHoverCat = hoverCat !== null && hoverCat !== 'free' ? hoverCat : null
 
-    const localeSvc = ctx.get('locale')
-    const activeLocale = localeSvc !== undefined && typeof localeSvc.getLocale === 'function'
-      ? localeSvc.getLocale().active
-      : 'en'
     const subtitle = providerModelLabelOf(data.provider, data.model, data.reasoningEffort)
     const gate = unsupportedOf(data.unsupported)
 
@@ -840,7 +840,7 @@ export function makeContextView(
           <div className="lc-cols lc-head">
             <StatsContext counts={counts} humanInputs={data.humanInputs} answers={data.answers} toolCalls={data.toolCalls}
               files={ioTotals} tools={toolTally} commands={commandBoard}
-              cost={data.cost} costRead={data.costRead} locale={activeLocale} sessionId={typeof sessionId === 'string' ? sessionId : undefined}
+              cost={data.cost} costRead={data.costRead} locale={activeLocale} currency={currency} sessionId={typeof sessionId === 'string' ? sessionId : undefined}
               onJump={onJump} onTeamClick={hasFamilyView ? onTeamClick : undefined}
               onToolPick={onToolPick}
               onToolMore={onToolMore}
@@ -929,6 +929,7 @@ export function makeContextView(
             sessionId={typeof sessionId === 'string' ? sessionId : undefined}
             self={agentSelfOf(data, pressure, breakdown, usage)}
             focusId={focusMember}
+            currency={currency}
           />
         ) : null}
 

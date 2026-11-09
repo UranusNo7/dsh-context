@@ -200,6 +200,7 @@ interface StatsContextProps {
   cost?: SessionCostUsage
   costRead?: SessionCostRead
   locale: string
+  currency?: CostCurrency
   sessionId?: string
 }
 
@@ -348,7 +349,7 @@ export function makeStatsContext(
 ): (props: StatsContextProps) => ReactElement {
   const { t, fmt } = kit
   return function StatsContext(props: StatsContextProps): ReactElement {
-    const currency: CostCurrency = props.locale === 'zh' ? 'cny' : 'usd'
+    const currency: CostCurrency = props.currency ?? (props.locale === 'zh' ? 'cny' : 'usd')
     const sub = useSubagentCost(props.sessionId)
     const subUsage = sub.usage
     const usage = mergeCostUsage(props.cost, subUsage) ?? undefined

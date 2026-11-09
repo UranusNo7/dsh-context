@@ -71,6 +71,14 @@ This is why a coding-plan session shows a maker reference price, not `$0`. The $
 - **Not priced: … has N entries with different rates** — carriers disagree and no authority selects one.
 - **Model prices are unavailable (retrying automatically)** — the price book failed to load; this is not a mapping gap.
 
+## Per-model breakdown
+
+The overview summary carries one row per billed `(provider, model)` pair (`summary.models`), aggregated by the host over the same complete scope as the KPI totals: the four billed buckets (input is uncached input, plus cache read, cache write and output) and their sum. Each row is priced through the resolver above from its own route, so a row never borrows another model's rate. An unpriced route keeps its tokens and shows no money, and the priced rows add up to the summary's displayed total. Coding-plan routes with a resolved maker price still show that reference estimate; only unresolved routes appear by token count alone.
+
+## Display currency
+
+USD stays the storage and computation basis; the display currency is a presentation preference, not another price table. `displayCurrency` is `auto` (default), `usd` or `cny`: `auto` follows the UI language (Chinese shows CNY, every other language USD), and the overview header's `$`/`¥` buttons persist an explicit choice. Conversion is the fixed reference 1 CNY = 0.15 USD (CNY = USD / 0.15, so ¥100.00 is about $15.00), applied to both the totals and the per-million rates in the tooltips; there is no live FX feed. A host without the setting falls back to `auto`, and real account balances keep the currency the provider reports.
+
 ## Boundaries
 
 - models.dev lists public USD prices; private contracts, regional pricing, reseller discounts, and CNY-only lists are not represented.

@@ -90,7 +90,7 @@ function apply(ctx: ClientCtx): void {
   const settings = createContextSettings()
   const heads = makeAgentHeads()
   const ContextView = makeContextView(ctx, kit, settings, heads)
-  const FleetView = makeFleetView(ctx, kit, heads)
+  const FleetView = makeFleetView(ctx, kit, heads, settings)
 
   ctx.effect(() => watchPlacement(settings, {
     tab: () => ctx.slots.inject('conversation.view', () => ctx.slots.register(

@@ -93,6 +93,7 @@ export interface BootOptions {
   coverage?: BackfillCoverage
   backfillVersion?: number
   costReady?: boolean
+  costUnpriced?: (provider: string, model: string) => boolean
   scanTtlMs?: number
   servedKeysMax?: number
   listSessions?: () => Promise<unknown>
@@ -120,7 +121,7 @@ export const OPEN_COVERAGE: BackfillCoverage = {
   unsupported: 0,
 }
 
-export function costOfUsage(usage: SessionCostUsage | null | undefined): number | null {
+export function costOfUsage(usage: SessionCostUsage | null | undefined, unpriced?: (provider: string, model: string) => boolean): number | null {
   if (usage === null || usage === undefined) return null
   let total = 0
   let any = false
@@ -128,6 +129,7 @@ export function costOfUsage(usage: SessionCostUsage | null | undefined): number 
     const models = asRecord(usage[provider])
     if (models === null) continue
     for (const model of Object.keys(models)) {
+      if (unpriced?.(provider, model) === true) continue
       const periods = asRecord(models[model])
       if (periods === null) continue
       for (const period of ['peak', 'off'] as const) {
@@ -146,11 +148,11 @@ export function numOf(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-export function fakeCost(ready: boolean): CostSource {
+export function fakeCost(ready: boolean, unpriced?: (provider: string, model: string) => boolean): CostSource {
   return {
     ready: () => ready,
-    read: (usage) => ({ usd: ready ? costOfUsage(usage) : null, ready }),
-    usd: (usage) => (ready ? costOfUsage(usage) : null),
+    read: (usage) => ({ usd: ready ? costOfUsage(usage, unpriced) : null, ready }),
+    usd: (usage) => (ready ? costOfUsage(usage, unpriced) : null),
   }
 }
 
@@ -431,7 +433,7 @@ export function boot(options: BootOptions = {}): Promise<Harness> {
     ...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
     ...(cache === null ? {} : { cache }),
   }
-  const dispose = watchOverviewRoute(ctx, fakeCost(state.costReady), fakeBackfill(state), routeOptions)
+  const dispose = watchOverviewRoute(ctx, fakeCost(state.costReady, options.costUnpriced), fakeBackfill(state), routeOptions)
   return (async () => {
     for (let index = 0; index < 300 && !routes.has(OVERVIEW_ROUTE); index++) {
       await new Promise(resolve => setTimeout(resolve, 1))

@@ -1,7 +1,7 @@
 import { createElement as h, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement } from 'react'
 import type { AgentHeads } from '../agentHeads'
 import { agentSelfOf } from '../agentTree'
-import { displayCurrencyOf } from '../cost'
+import { activeLocaleOf, useDisplayCurrency } from '../currency'
 import { mergeComms, mergeDelegations } from '../fleetDetail'
 import { attestedNamesOf, commsAgentsOf } from '../fleetAgents'
 import { mergedDetailOf, useFleetDetails, useFleetModel } from '../fleetModel'
@@ -10,6 +10,7 @@ import type { ClientCtx, SessionStandardProps } from '../services'
 import { CONTEXT_VIEW_ID, openChildAsideVia, openSessionVia, projectionOf, seatKeyOf, seedConversationViewVia, unsupportedOf } from '../services'
 import { useFleetMemberFocus } from '../viewFocus'
 import { useContextSession } from '../sessionData'
+import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import type { FleetDetail, FleetMemberInfo } from '../../shared/types'
 import { makeAgentGraph } from './agentGraph'
@@ -24,6 +25,7 @@ export function makeFleetView(
   ctx: ClientCtx,
   kit: ViewKit,
   heads: AgentHeads,
+  settings: ContextSettings,
 ): (props: SessionStandardProps) => ReactElement {
   const { t } = kit
   const UpgradeGate = makeUpgradeGate(kit)
@@ -32,8 +34,13 @@ export function makeFleetView(
   const ErrorBoundary = makeErrorBoundary(t)
   const rich = makeRichText(kit)
 
+  function activeLocale(): string {
+    return activeLocaleOf(ctx.locale)
+  }
+
   function FleetBody(props: SessionStandardProps): ReactElement {
     const sessionId = typeof props.sessionId === 'string' ? props.sessionId : undefined
+    const currency = useDisplayCurrency(settings, activeLocale(), kit)
     const { source, data, pressure, breakdown, usage } = useContextSession(props)
     const rootRef = useRef<HTMLDivElement | null>(null)
     useConversationSurface(rootRef)
@@ -138,7 +145,7 @@ export function makeFleetView(
           titles={titles}
           attested={attestedNames}
           focusMember={focusMember}
-          currency={displayCurrencyOf(ctx.locale)}
+          currency={currency}
           onOpen={open}
           onEnter={enter}
           rich={rich}

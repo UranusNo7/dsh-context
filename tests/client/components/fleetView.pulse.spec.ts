@@ -5,6 +5,7 @@ import { makeFleetView } from '../../../src/client/components/fleetView'
 import { makeAgentHeads } from '../../../src/client/agentHeads'
 import { DICT_EN, DICT_ZH } from '../../../src/client/i18n'
 import { resetTimelineDetailStores } from '../../../src/client/timelineSource'
+import { createContextSettings } from '../../../src/client/settings'
 import { TestClientCtx, asClientCtx } from '../helpers/harness'
 import { click, makeKit, mount, query, queryAll, text, typeText, until } from '../helpers/kit'
 import { projectionsFor, richTimeline } from './contextViewHarness'
@@ -60,7 +61,7 @@ function stubFleetRoute(): void {
 }
 
 function makeView(ctx: TestClientCtx, locale: 'en' | 'zh' = 'en') {
-  return makeFleetView(asClientCtx(ctx), makeKit(locale), makeAgentHeads())
+  return makeFleetView(asClientCtx(ctx), makeKit(locale), makeAgentHeads(), createContextSettings())
 }
 
 async function settleEvents(m: Awaited<ReturnType<typeof mount>>, count = 2): Promise<void> {

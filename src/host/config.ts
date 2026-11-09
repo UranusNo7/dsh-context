@@ -47,6 +47,7 @@ export const Config = z.object({
   overviewAutoSteps: volatileField(z.union(['100', '200', '300', 'off']).default('100').loose()),
   defaultOverviewRange: volatileField(z.union(['today', '7d', '30d', 'all']).default('30d').loose()),
   fleetTab: volatileField(z.union(['show', 'hide']).default('show').loose()),
+  displayCurrency: volatileField(z.union(['auto', 'usd', 'cny']).default('auto').loose()),
   promptPrefix: volatileField(z.string().default('').loose()),
   promptSuffix: volatileField(z.string().default('').loose()),
 })

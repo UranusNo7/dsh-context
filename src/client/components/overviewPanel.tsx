@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { formatCost, toCurrency, type CostCurrency } from '../cost'
+import { activeLocaleOf, useDisplayCurrencyState } from '../currency'
 import { RING_COLOR } from '../categories'
 import { fmt } from '../format'
 import {
@@ -24,6 +25,7 @@ import { Donut } from './donut'
 import { useHoverTip } from './hoverTip'
 import { makeOverviewTokens } from './overviewTokens'
 import { makeOverviewUsage } from './overviewUsage'
+import { makeOverviewModels } from './overviewModels'
 import { makeStatsTiming } from './statsTiming'
 import { makeOverviewCard, type OverviewCardRow } from './overviewCard'
 import { makeOverviewSkills } from './overviewSkills'
@@ -42,6 +44,9 @@ const RANGES: readonly OverviewRange[] = ['today', '7d', '30d', 'all']
 const SORTS: readonly OverviewSort[] = ['recent', 'tokens', 'context']
 const COVERAGE: readonly OverviewCoverage[] = ['all', 'active', 'archived']
 const METRICS: readonly HeatMetric[] = ['sessions', 'tokens']
+const CURRENCIES: readonly CostCurrency[] = ['usd', 'cny']
+const CURRENCY_GLYPH: Record<CostCurrency, string> = { usd: '$', cny: '¥' }
+const CURRENCY_LABEL: Record<CostCurrency, string> = { usd: 'currency.usd', cny: 'currency.cny' }
 const PICK_FILTER: Record<TallyField, { label: string; clear: string }> = {
   skills: { label: 'node.skillTag', clear: 'ov.list.skillClear' },
   tools: { label: 'ov.list.toolFilter', clear: 'ov.list.toolClear' },
@@ -62,18 +67,14 @@ export function makeOverviewPanel(
   const OverviewTokens = makeOverviewTokens(kit, Donut)
   const StatsTiming = makeStatsTiming(kit, Donut)
   const OverviewUsage = makeOverviewUsage(kit)
+  const OverviewModels = makeOverviewModels(kit)
   const OverviewSkills = makeOverviewSkills(kit)
   const OverviewTally = makeOverviewTally(kit)
   const UpdatePill = makeUpdatePill(kit)
   const ErrorBoundary = makeErrorBoundary(t)
 
   function activeLocale(): string {
-    const locale = ctx.locale
-    return typeof locale.getLocale === 'function' ? locale.getLocale().active : 'en'
-  }
-
-  function activeCurrency(): CostCurrency {
-    return activeLocale() === 'zh' ? 'cny' : 'usd'
+    return activeLocaleOf(ctx.locale)
   }
 
   function OverviewBody(props: OverviewPanelProps): ReactElement | null {
@@ -108,7 +109,7 @@ export function makeOverviewPanel(
 
     useEffect(() => { setPage(0) }, [preset, custom, coverage, day, query, group, pick, sort])
 
-    const currency = activeCurrency()
+    const { currency, editable: currencyEditable } = useDisplayCurrencyState(settings, activeLocale(), kit)
     const nowMinute = Math.floor(Date.now() / 60_000) * 60_000
     const nowForCards = Date.now()
     const hostRange = useMemo<HostRange>(() => {
@@ -177,16 +178,14 @@ export function makeOverviewPanel(
       return out
     }, [daysState.data, currency])
     const tokenParts = useMemo(() => {
-      const parts = summary?.tokenParts ?? null
-      if (parts === null) return null
-      let total = 0
+      if (summary === null || summary.tokenParts === null) return null
+      const parts = summary.tokenParts
       const shown: { key: string; color: string; value: number }[] = []
       for (const part of parts) {
         if (!(part.value > 0)) continue
-        total += part.value
         shown.push({ key: part.key, color: RING_COLOR[part.key] ?? 'var(--color-gray-400)', value: part.value })
       }
-      return { parts: shown, total }
+      return { parts: shown, total: summary.tokens }
     }, [summary])
     const skillStats = useMemo(() => [...(skillsState.data?.tally.stats ?? [])], [skillsState.data])
     const toolStats = useMemo(() => [...(toolsState.data?.tally.stats ?? [])], [toolsState.data])
@@ -230,6 +229,19 @@ export function makeOverviewPanel(
               <BalanceCapsule />
               <UpdatePill />
               <div className="lc-ov-headctl">
+                <div className="lc-gran lc-ov-currency" role="group" aria-label={t('currency.label')}>
+                  {CURRENCIES.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      title={t(CURRENCY_LABEL[c]) + (c === 'cny' ? ' · ' + t('stats.costTipCny') : '')}
+                      className={'lc-gran-btn' + (currency === c ? ' lc-gran-on' : '')}
+                      aria-pressed={currency === c}
+                      disabled={!currencyEditable}
+                      onClick={() => { if (settings.displayCurrency() !== c) settings.set('displayCurrency', c) }}
+                    >{CURRENCY_GLYPH[c]}</button>
+                  ))}
+                </div>
                 <DateRange
                   value={span}
                   picked={custom !== null}
@@ -293,6 +305,11 @@ export function makeOverviewPanel(
                   <OverviewTokens tokens={tokenParts} />
                   <StatsTiming timing={teamTiming} />
                 </div>
+                {summary?.models !== undefined && summary.models.length > 0 ? (
+                  <div className="lc-ov-models-row">
+                    <OverviewModels models={summary.models} currency={currency} />
+                  </div>
+                ) : null}
                 <div className="lc-ov-body" ref={bodyRef}>
                   {bodyMounted ? (<>
                     <div className="lc-ov-tiles">
