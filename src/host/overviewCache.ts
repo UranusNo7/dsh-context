@@ -2,8 +2,11 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ActivityDay, ActivityTally, ContextActivity, SessionCostUsage, Snapshot, TimingTotals } from '../shared/types'
-import type { HostSession, HostTimeline } from './overviewCorpus'
+import { numOf, optionalNumOf, type HostSession, type HostTimeline } from './overviewCorpus'
+import { captureIdentities, loadIdentityRecords, refreshIdentities, type DurableIdentity, type StatHost } from './overviewIdentity'
 import { asRecord } from './record'
+
+export type { DurableIdentity, StatHost } from './overviewIdentity'
 
 export const OVERVIEW_CACHE_FORMAT = 1
 
@@ -44,12 +47,6 @@ const NODE_FS: CacheFs = {
   rm: async (path) => { await rm(path, { force: true }) },
 }
 
-export interface DurableIdentity {
-  path: string
-  sizeBytes: number
-  mtimeMs: number
-}
-
 export interface CachedSession {
   session: HostSession
   identity: DurableIdentity | null
@@ -64,10 +61,6 @@ export interface OverviewCacheLoad {
 export interface OverviewCacheRefresh {
   identities: Map<string, DurableIdentity | null>
   changed: Set<string>
-}
-
-export interface StatHost {
-  stat?(id: string): Promise<unknown>
 }
 
 export interface OverviewCacheOptions {
@@ -102,25 +95,12 @@ export function identityKey(identity: DurableIdentity | null | undefined): strin
   return `${identity.path}\u0000${String(identity.sizeBytes)}\u0000${String(identity.mtimeMs)}`
 }
 
-function sameIdentity(left: DurableIdentity | null, right: DurableIdentity | null): boolean {
-  if (left === null || right === null) return left === right
-  return left.path === right.path && left.sizeBytes === right.sizeBytes && left.mtimeMs === right.mtimeMs
-}
-
-function numOf(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function optionalNumOf(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
 function usageOf(value: unknown): SessionCostUsage | undefined {
   const data = asRecord(value)
   return data === null ? undefined : data as SessionCostUsage
 }
 
-function tallyTableOf(value: unknown): Record<string, ActivityTally> | undefined {
+export function tallyTableOf(value: unknown): Record<string, ActivityTally> | undefined {
   const data = asRecord(value)
   if (data === null) return undefined
   const table: Record<string, ActivityTally> = {}
@@ -295,13 +275,6 @@ function parsedRecords(value: unknown): CachedSession[] {
   return records
 }
 
-async function inBatches<T>(items: readonly T[], size: number, run: (item: T) => Promise<void>): Promise<void> {
-  for (let index = 0; index < items.length; index += size) {
-    await Promise.all(items.slice(index, index + size).map(run))
-    await new Promise(resolve => setTimeout(resolve, 0))
-  }
-}
-
 export function createOverviewCache(options: OverviewCacheOptions = {}): OverviewCache {
   const path = options.path ?? overviewCachePath()
   const fs = options.fs ?? NODE_FS
@@ -341,84 +314,25 @@ export function createOverviewCache(options: OverviewCacheOptions = {}): Overvie
     currentIds: ReadonlySet<string>,
     known?: ReadonlyMap<string, DurableIdentity | null>,
   ): Promise<OverviewCacheLoad> => {
-    const sessions = new Map<string, HostSession>()
-    const identities = new Map<string, DurableIdentity | null>()
-    const rebuild = new Set<string>()
     let file: unknown
     try {
       file = JSON.parse(await fs.readFile(path))
     } catch {
-      return { sessions, identities, rebuild }
+      return { sessions: new Map(), identities: new Map(), rebuild: new Set() }
     }
-    const records = parsedRecords(file).filter(record => currentIds.has(record.session.id))
-    await inBatches(records, statConcurrency, async (record) => {
-      const id = record.session.id
-      if (known !== undefined) {
-        const expected = known.get(id) ?? null
-        identities.set(id, expected)
-        if (record.identity !== null && sameIdentity(record.identity, expected)) sessions.set(id, record.session)
-        else rebuild.add(id)
-        return
-      }
-      if (record.identity === null) {
-        identities.set(id, null)
-        rebuild.add(id)
-        return
-      }
-      try {
-        const info = await fs.stat(record.identity.path)
-        if (info.size === record.identity.sizeBytes && info.mtimeMs === record.identity.mtimeMs) {
-          identities.set(id, record.identity)
-          sessions.set(id, record.session)
-          return
-        }
-        identities.set(id, { path: record.identity.path, sizeBytes: info.size, mtimeMs: info.mtimeMs })
-        rebuild.add(id)
-      } catch {
-        identities.set(id, null)
-        rebuild.add(id)
-      }
-    })
-    return { sessions, identities, rebuild }
+    const records = parsedRecords(file)
+      .filter(record => currentIds.has(record.session.id))
+      .map(record => [record.session.id, record] as const)
+    return loadIdentityRecords(records, known, filePath => fs.stat(filePath), statConcurrency)
   }
 
   const refresh = async (
     currentIds: ReadonlySet<string>,
     known: ReadonlyMap<string, DurableIdentity | null>,
-  ): Promise<OverviewCacheRefresh> => {
-    const identities = new Map<string, DurableIdentity | null>()
-    const changed = new Set<string>()
-    const targets: { id: string; identity: DurableIdentity }[] = []
-    for (const id of currentIds) {
-      const identity = known.get(id)
-      if (identity === null || identity === undefined) continue
-      targets.push({ id, identity })
-    }
-    await inBatches(targets, statConcurrency, async ({ id, identity }) => {
-      try {
-        const info = await fs.stat(identity.path)
-        if (info.size === identity.sizeBytes && info.mtimeMs === identity.mtimeMs) {
-          identities.set(id, identity)
-          return
-        }
-        identities.set(id, { path: identity.path, sizeBytes: info.size, mtimeMs: info.mtimeMs })
-        changed.add(id)
-      } catch {
-        identities.set(id, null)
-        changed.add(id)
-      }
-    })
-    return { identities, changed }
-  }
+  ): Promise<OverviewCacheRefresh> => refreshIdentities(currentIds, known, filePath => fs.stat(filePath), statConcurrency)
 
-  const capture = async (ids: readonly string[], host: StatHost): Promise<Map<string, DurableIdentity | null>> => {
-    const identities = new Map<string, DurableIdentity | null>()
-    const statOf = typeof host.stat === 'function' ? host.stat.bind(host) : undefined
-    await inBatches(ids, statConcurrency, async (id) => {
-      identities.set(id, await captureOne(id, statOf, fs))
-    })
-    return identities
-  }
+  const capture = async (ids: readonly string[], host: StatHost): Promise<Map<string, DurableIdentity | null>> =>
+    captureIdentities(ids, host, filePath => fs.stat(filePath), statConcurrency)
 
   const save = (records: readonly CachedSession[]): void => {
     if (disposed) return
@@ -447,29 +361,4 @@ export function createOverviewCache(options: OverviewCacheOptions = {}): Overvie
   }
 
   return { load, refresh, capture, save, flush, dispose }
-}
-
-async function captureOne(
-  id: string,
-  statOf: ((id: string) => Promise<unknown>) | undefined,
-  fs: CacheFs,
-): Promise<DurableIdentity | null> {
-  if (statOf === undefined) return null
-  let snapshot: unknown
-  try {
-    snapshot = await statOf(id)
-  } catch {
-    return null
-  }
-  const data = asRecord(snapshot)
-  const location = asRecord(data?.location)
-  const path = typeof location?.path === 'string' && location.path !== '' ? location.path : undefined
-  const sizeBytes = optionalNumOf(data?.sizeBytes)
-  if (path === undefined || sizeBytes === undefined) return null
-  try {
-    const info = await fs.stat(path)
-    return { path, sizeBytes, mtimeMs: info.mtimeMs }
-  } catch {
-    return null
-  }
 }

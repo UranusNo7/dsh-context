@@ -115,6 +115,8 @@ export interface OverviewTallyProps {
   day?: string | null
   selected?: string | null
   onSelect?: (name: string | null) => void
+  loading?: boolean
+  failed?: boolean
 }
 
 export function makeOverviewTally(kit: ViewKit): (props: OverviewTallyProps) => ReactElement {
@@ -128,14 +130,20 @@ export function makeOverviewTally(kit: ViewKit): (props: OverviewTallyProps) => 
     const hidden = stats.length - shown.length
     const title = t(face.title)
     const Icon = face.icon
+    const loading = props.loading === true
+    const failed = props.failed === true
     return (
       <TallyCard
         icon={<Icon size={14} />}
         title={title}
         day={props.day}
-        summary={t(face.summary, { n: fmt(stats.length), runs: fmt(total) })}
+        summary={loading || (failed && stats.length === 0) ? '—' : t(face.summary, { n: fmt(stats.length), runs: fmt(total) })}
       >
-        {stats.length === 0 ? (
+        {loading ? (
+          <div className="lc-empty">{t('ov.loading')}</div>
+        ) : failed && stats.length === 0 ? (
+          <div className="lc-empty">{t('ov.loadFailed')}</div>
+        ) : stats.length === 0 ? (
           <div className="lc-empty">{t(face.empty)}</div>
         ) : (
           <div className="lc-ov-tallies" role="group" aria-label={title}>

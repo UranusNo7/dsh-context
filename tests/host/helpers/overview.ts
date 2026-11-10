@@ -107,6 +107,8 @@ export interface BootOptions {
   yieldEvery?: number
   yieldTo?: () => Promise<void>
   cachePath?: string
+  databasePath?: string
+  costVersion?: () => number
   foldedAvailable?: boolean
   noCache?: boolean
 }
@@ -148,11 +150,16 @@ export function numOf(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-export function fakeCost(ready: boolean, unpriced?: (provider: string, model: string) => boolean): CostSource {
+export function fakeCost(
+  ready: boolean,
+  unpriced?: (provider: string, model: string) => boolean,
+  version?: () => number,
+): CostSource {
   return {
     ready: () => ready,
     read: (usage) => ({ usd: ready ? costOfUsage(usage, unpriced) : null, ready }),
     usd: (usage) => (ready ? costOfUsage(usage, unpriced) : null),
+    ...(version === undefined ? {} : { version }),
   }
 }
 
@@ -426,14 +433,21 @@ export function boot(options: BootOptions = {}): Promise<Harness> {
     : (options.cache as FakeOverviewCache | undefined) ?? fakeOverviewCache(state)
   const routeOptions = {
     scanTtlMs: options.scanTtlMs ?? 0,
+    database: options.databasePath !== undefined,
     ...(options.servedKeysMax === undefined ? {} : { servedKeysMax: options.servedKeysMax }),
     ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
     ...(options.yieldEvery === undefined ? {} : { yieldEvery: options.yieldEvery }),
     ...(options.yieldTo === undefined ? {} : { yieldTo: options.yieldTo }),
     ...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
+    ...(options.databasePath === undefined ? {} : { databasePath: options.databasePath }),
     ...(cache === null ? {} : { cache }),
   }
-  const dispose = watchOverviewRoute(ctx, fakeCost(state.costReady, options.costUnpriced), fakeBackfill(state), routeOptions)
+  const dispose = watchOverviewRoute(
+    ctx,
+    fakeCost(state.costReady, options.costUnpriced, options.costVersion),
+    fakeBackfill(state),
+    routeOptions,
+  )
   return (async () => {
     for (let index = 0; index < 300 && !routes.has(OVERVIEW_ROUTE); index++) {
       await new Promise(resolve => setTimeout(resolve, 1))

@@ -221,7 +221,7 @@ describe('OverviewPanel', () => {
     const page = query(m.container, '.lc-ov-page')
     assert.equal(page.getAttribute('aria-busy'), 'true')
     assert.ok(page.className.includes('lc-ov-busy'))
-    assert.deepEqual(queryAll(m.container, '.lc-stat-value').map(el => el.textContent), ['—', '—', '—', '—', '0', '—'])
+    assert.deepEqual(queryAll(m.container, '.lc-stat-value').map(el => el.textContent), ['—', '—', '—', '—', '—', '—'])
     await act(async () => { releaseSummary?.(summaryValueFor({ scope: { range: '30d', coverage: 'all' } })) })
     await flush()
     await settle(1)
@@ -428,7 +428,11 @@ describe('OverviewPanel', () => {
   })
 
   test('a failed page read shows the unavailable note while the summary and days keep loading', async () => {
-    const calls = stubRoutes({ page: () => { throw new Error('page down') } })
+    const calls = stubRoutes({
+      page: () => { throw new Error('page down') },
+      summary: () => new Promise<unknown>(() => {}),
+      days: () => new Promise<unknown>(() => {}),
+    })
     const { m } = await openPanel(makeCtx())
     assert.ok(text(m.container).includes('The session list is unavailable'))
     assert.equal(queryAll(m.container, '.lc-ov-kpi').length, 0)

@@ -266,14 +266,15 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
   pickRef.current = pick
   const [data, setData] = useState<T | null>(null)
   const [dataKey, setDataKey] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+  const [settledKey, setSettledKey] = useState<string | null>(null)
+  const [inFlight, setInFlight] = useState(false)
   const [stale, setStale] = useState(false)
   const [error, setError] = useState(false)
   const [revision, setRevision] = useState<string | null>(null)
 
   useLayoutEffect(() => {
     if (!enabled || request === null) {
-      setPending(false)
+      setInFlight(false)
       return
     }
     const live = { cancelled: false, inFlight: false, queued: false }
@@ -306,7 +307,7 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
         return
       }
       live.inFlight = true
-      setPending(true)
+      setInFlight(true)
       try {
         const known = readOverviewPart(key)
         const body: OverviewRequest = { ...request, revision: known === undefined ? null : known.revision }
@@ -315,6 +316,7 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
         if (read === null) {
           setError(true)
           setStale(true)
+          setSettledKey(key)
           return
         }
         setRevision(read.revision)
@@ -323,25 +325,31 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
           touchOverviewPart(key)
           notePricingPending(pricingReady.current)
           setStale(false)
+          setSettledKey(key)
           return
         }
         writeOverviewPart(key, read)
         pricingReady.current = read.pricingReady
         notePricingPending(read.pricingReady)
         const picked = pickRef.current(read)
-        if (picked === null) return
+        if (picked === null) {
+          setSettledKey(key)
+          return
+        }
         setData(picked)
         setDataKey(key)
         setStale(false)
+        setSettledKey(key)
       } catch {
         if (!stopped()) {
           setError(true)
           setStale(true)
+          setSettledKey(key)
         }
       } finally {
         live.inFlight = false
         if (!stopped()) {
-          setPending(false)
+          setInFlight(false)
           if (queued()) {
             live.queued = false
             void fetchNow()
@@ -369,13 +377,15 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
     }
   }, [key, enabled])
 
-  const visible = dataKey === null ? false : request === null || dataKey === key
+  const matches = request !== null && key !== ''
+  const painted = !enabled || request === null ? data !== null : dataKey === key
+  const settled = enabled && matches && settledKey === key
   return {
-    data: visible ? data : null,
-    pending,
-    stale,
-    error,
-    revision: visible ? revision : null,
+    data: painted ? data : null,
+    pending: enabled && matches && (inFlight || !settled),
+    stale: settled ? stale : false,
+    error: settled ? error : false,
+    revision: painted ? revision : null,
   }
 }
 

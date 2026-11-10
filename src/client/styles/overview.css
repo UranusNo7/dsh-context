@@ -211,3 +211,6 @@ body:not([data-ds-dark-theme]) .lc-ov-session { border-radius: 12px; box-shadow:
   .lc-ov-models-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .lc-ov-currency { flex: none; }
+
+.lc-ov-status { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.lc-ov-status-err { color: var(--dsw-alias-state-warn-primary); }

@@ -190,11 +190,30 @@ export function makeOverviewPanel(
     const skillStats = useMemo(() => [...(skillsState.data?.tally.stats ?? [])], [skillsState.data])
     const toolStats = useMemo(() => [...(toolsState.data?.tally.stats ?? [])], [toolsState.data])
     const commandStats = useMemo(() => [...(cmdsState.data?.tally.stats ?? [])], [cmdsState.data])
-    const tallyCards: readonly { kind: TallyCardKind; field: TallyField; stats: TallyStat[] }[] = [
-      { kind: 'tool', field: 'tools', stats: toolStats },
-      { kind: 'command', field: 'cmds', stats: commandStats },
+    const tallyPending = skillsState.pending || toolsState.pending || cmdsState.pending
+    const anyError = summaryState.error || daysState.error || pageState.error
+      || skillsState.error || toolsState.error || cmdsState.error
+    const anyPendingNoData = (summaryState.pending && summary === null)
+      || (daysState.pending && daysState.data === null)
+      || (pageState.pending && pageValue === null)
+      || (skillsState.pending && skillsState.data === null)
+      || (toolsState.pending && toolsState.data === null)
+      || (cmdsState.pending && cmdsState.data === null)
+    const anyErrorNoData = (summaryState.error && summary === null)
+      || (daysState.error && daysState.data === null)
+      || (pageState.error && pageValue === null)
+      || (skillsState.error && skillsState.data === null)
+      || (toolsState.error && toolsState.data === null)
+      || (cmdsState.error && cmdsState.data === null)
+    const busy = summaryState.pending || daysState.pending || pageState.pending || tallyPending
+    const status = anyErrorNoData ? 'ov.loadFailed'
+      : anyError ? 'ov.notUpdated'
+        : anyPendingNoData ? 'ov.loading'
+          : busy ? 'ov.updating' : null
+    const tallyCards: readonly { kind: TallyCardKind; field: TallyField; stats: TallyStat[]; loading: boolean; failed: boolean }[] = [
+      { kind: 'tool', field: 'tools', stats: toolStats, loading: toolsState.pending && toolsState.data === null, failed: toolsState.error && toolsState.data === null },
+      { kind: 'command', field: 'cmds', stats: commandStats, loading: cmdsState.pending && cmdsState.data === null, failed: cmdsState.error && cmdsState.data === null },
     ]
-    const busy = summaryState.pending || daysState.pending || pageState.pending
     const pickPreset = (range: OverviewRange): void => {
       setPicked(range)
       setCustom(null)
@@ -223,6 +242,9 @@ export function makeOverviewPanel(
           <div className="lc-ov-pagecontent">
             <div className="lc-ov-pagehead" data-window-drag>
               <h1 className="lc-ov-pagetitle">{t('ov.title')}</h1>
+              {status !== null && (
+                <span className={'lc-ov-status' + (anyError ? ' lc-ov-status-err' : '')} role="status">{t(status)}</span>
+              )}
               <button type="button" className="lc-ov-settings" title={t('plugin.settingsOpen')} onClick={() => { openPluginSettings(ctx) }}>
                 <IconSettings size={14} />{t('plugin.settings')}
               </button>
@@ -262,7 +284,7 @@ export function makeOverviewPanel(
               </div>
             </div>
 
-            {pageValue === null && pageState.error ? (
+            {pageValue === null && pageState.error && summary === null ? (
               <div className="lc-empty">{t('ov.unavailable')}</div>
             ) : (
               <>
@@ -290,20 +312,27 @@ export function makeOverviewPanel(
                     </div>
                     <div className="lc-stat lc-ov-kpi">
                       <span className="lc-stat-label">{t('stats.toolCalls')}</span>
-                      <span className="lc-stat-value">{fmt(teamTiming?.toolCalls ?? 0)}</span>
-                      <span className="lc-stat-sub">{t('ov.kpi.toolSub', { dur: fmtDuration(teamTiming?.toolBusyMs ?? teamTiming?.toolsMs ?? 0) })}</span>
+                      <span className="lc-stat-value">{summary === null ? '—' : fmt(teamTiming?.toolCalls ?? 0)}</span>
+                      <span className="lc-stat-sub">{summary === null ? '—' : t('ov.kpi.toolSub', { dur: fmtDuration(teamTiming?.toolBusyMs ?? teamTiming?.toolsMs ?? 0) })}</span>
                     </div>
                     <div className="lc-stat lc-ov-kpi">
                       <span className="lc-stat-label">{t('timing.total')}</span>
-                      <span className="lc-stat-value">{fmtDuration(activeMsOf(teamTiming))}</span>
-                      <span className="lc-stat-sub">{t('ov.kpi.wallSub', { n: fmt(teamTiming?.calls ?? 0) })}</span>
+                      <span className="lc-stat-value">{summary === null ? '—' : fmtDuration(activeMsOf(teamTiming))}</span>
+                      <span className="lc-stat-sub">{summary === null ? '—' : t('ov.kpi.wallSub', { n: fmt(teamTiming?.calls ?? 0) })}</span>
                     </div>
                   </div>
-                  <OverviewUsage days={days} currency={currency} today={todayKey()} />
+                  {daysState.data === null ? (
+                    <div className="lc-card lc-ov-usage"><div className="lc-empty">{t(daysState.error ? 'ov.loadFailed' : 'ov.loading')}</div></div>
+                  ) : <OverviewUsage days={days} currency={currency} today={todayKey()} />}
                 </div>
                 <div className="lc-ov-stats">
-                  <OverviewTokens tokens={tokenParts} />
-                  <StatsTiming timing={teamTiming} />
+                  {summary === null ? (<>
+                    <div className="lc-card lc-deferred-skeleton" style={{ minHeight: 240 }} aria-hidden="true" />
+                    <div className="lc-card lc-deferred-skeleton" style={{ minHeight: 240 }} aria-hidden="true" />
+                  </>) : (<>
+                    <OverviewTokens tokens={tokenParts} />
+                    <StatsTiming timing={teamTiming} />
+                  </>)}
                 </div>
                 {summary?.models !== undefined && summary.models.length > 0 ? (
                   <div className="lc-ov-models-row">
@@ -333,7 +362,9 @@ export function makeOverviewPanel(
                             </div>
                           </span>
                         </div>
-                        <Heatmap days={days} metric={metric} selected={day} onSelect={setDay} today={todayKey()} />
+                        {daysState.data === null ? (
+                          <div className="lc-empty">{t(daysState.error ? 'ov.loadFailed' : 'ov.loading')}</div>
+                        ) : <Heatmap days={days} metric={metric} selected={day} onSelect={setDay} today={todayKey()} />}
                       </div>
                       <OverviewSkills
                         stats={skillStats}
@@ -341,6 +372,8 @@ export function makeOverviewPanel(
                         selected={pick !== null && pick.field === 'skills' ? pick.name : null}
                         onSelect={(name) => { setPick(name === null ? null : { field: 'skills', name }) }}
                         catalog={catalog}
+                        loading={skillsState.pending && skillsState.data === null}
+                        failed={skillsState.error && skillsState.data === null}
                       />
                       {tallyCards.map(card => (
                         <OverviewTally
@@ -350,6 +383,8 @@ export function makeOverviewPanel(
                           day={day}
                           selected={pick !== null && pick.field === card.field ? pick.name : null}
                           onSelect={(name) => { setPick(name === null ? null : { field: card.field, name }) }}
+                          loading={card.loading}
+                          failed={card.failed}
                         />
                       ))}
                     </div>
@@ -357,7 +392,7 @@ export function makeOverviewPanel(
                     <div className="lc-ov-list">
                       <div className="lc-ov-list-head">
                         <span className="lc-ov-list-title">{t('ov.list.title')}</span>
-                        <span className="lc-ov-list-count">{listTotal}</span>
+                        <span className="lc-ov-list-count">{pageValue === null ? '—' : listTotal}</span>
                         {day !== null && (
                           <button type="button" className="lc-ov-day-chip" title={t('ov.list.dayClear')} onClick={() => { setDay(null) }}>
                             {t('ov.list.dayFilter', { day })} ×
@@ -417,7 +452,13 @@ export function makeOverviewPanel(
                       )}
 
                       {rows.length === 0 ? (
-                        <div className="lc-empty">{t((summary?.sessionsTotal ?? 0) === 0 ? 'ov.list.empty' : 'ov.list.noMatch')}</div>
+                        <div className="lc-empty">
+                          {pageValue === null
+                            ? t(pageState.error ? 'ov.loadFailed' : 'ov.loading')
+                            : summary === null
+                              ? t(summaryState.error ? 'ov.loadFailed' : 'ov.loading')
+                              : t(summary.sessionsTotal === 0 ? 'ov.list.empty' : 'ov.list.noMatch')}
+                        </div>
                       ) : (
                         <>
                           <div className="lc-ov-grid">
