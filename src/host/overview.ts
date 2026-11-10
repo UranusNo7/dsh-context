@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { performance } from 'node:perf_hooks'
+import { dayKeyOf } from '../shared/days'
 import type {
   BackfillCoverage,
   OverviewCoverage,
@@ -12,10 +13,15 @@ import type {
   OverviewTallyField,
   OverviewValue,
 } from '../shared/types'
+import { ACTIVITY_STATE_VERSION } from './activity'
+import { TIMELINE_STATE_VERSION } from './timeline'
 import type { BackfillHandle } from './backfill'
 import type { CostSource } from './cost'
 import type { CachedSnapshotFace, SessionQueryFace, SnapshotProjectionsFace } from './faces'
 import { createOverviewCache, identityKey, type CachedSession, type DurableIdentity, type OverviewCache } from './overviewCache'
+import { createOverviewDatabaseCache, type OverviewDatabaseCache } from './overviewDatabaseCache'
+import { queryDays, queryPage, queryRootUsages } from './overviewDatabaseQuery'
+import type { OverviewStatsDatabase } from './overviewDatabase'
 import {
   buildRows,
   optionalNumOf,
@@ -172,20 +178,61 @@ interface FeedView {
   open: boolean
 }
 
-function valueOf(parsed: ParsedRequest, revision: string, cost: CostSource, data: FeedView): OverviewValue {
+function valueOf(
+  parsed: ParsedRequest,
+  revision: string,
+  cost: CostSource,
+  data: FeedView,
+  database: OverviewStatsDatabase | null,
+): OverviewValue {
   const pricingReady = cost.ready()
   if (parsed.part === 'summary') {
+    const roots = database === null ? undefined : queryRootUsages(database, revision, data.filters)
     return {
       revision,
       pricingReady,
-      summary: summaryOf(data.allRows, data.rows, data.filters, cost, data.coverage, data.open),
+      summary: roots === undefined
+        ? summaryOf(data.allRows, data.rows, data.filters, cost, data.coverage, data.open)
+        : summaryOf(
+          data.allRows,
+          data.rows,
+          data.filters,
+          cost,
+          data.coverage,
+          data.open,
+          roots.map(root => ({ usage: root.usage, turns: root.turns })),
+        ),
     }
   }
   if (parsed.part === 'days') {
-    return { revision, pricingReady, days: daysOf(data.allRows, data.filters.coverage, cost) }
+    const days = database === null ? undefined : queryDays(database, revision, data.filters.coverage)
+    return {
+      revision,
+      pricingReady,
+      days: days === undefined
+        ? daysOf(data.allRows, data.filters.coverage, cost)
+        : days.map(day => ({
+          key: day.key,
+          tokens: day.tokens,
+          sessions: day.sessions,
+          costUsd: cost.usd(day.usage),
+        })),
+    }
   }
   if (parsed.part === 'tally') {
     return { revision, pricingReady, tally: { field: parsed.tally, stats: tallyStatsOf(data.rows, data.filters, parsed.tally) } }
+  }
+  const databasePage = database === null ? undefined : queryPage(database, revision, data.filters, parsed.sort, parsed.page)
+  if (databasePage !== undefined) {
+    const page: OverviewPage = {
+      items: databasePage.rows.map(row => pageRowOf(row, cost)),
+      index: databasePage.index,
+      count: databasePage.count,
+      total: databasePage.total,
+      scopeTotal: databasePage.scopedTotal,
+      groups: groupCountsOf(data.scoped, data.workspace),
+    }
+    return { revision, pricingReady, page }
   }
   const sorted = sortOf(data.rows, parsed.sort)
   const paged = pageOf(sorted, parsed.page)
@@ -208,12 +255,14 @@ export interface OverviewRouteOptions {
   yieldTo?: () => Promise<void>
   cache?: OverviewCache
   cachePath?: string
+  databasePath?: string
+  database?: boolean
 }
 
 interface ScanResult {
   entries: ScanEntry[]
   coldIds: ReadonlySet<string>
-  fresh: boolean
+  seq: number
 }
 
 export function watchOverviewRoute(
@@ -230,20 +279,49 @@ export function watchOverviewRoute(
   let scanColdIds: ReadonlySet<string> | null = null
   let scanAt = 0
   let scanVersion = -1
+  let scanSeq = 0
+  let validatedScanSeq = -1
   let inflight: Promise<ScanResult> | null = null
   let materializeTail: Promise<void> = Promise.resolve()
-  let identities = new Map<string, DurableIdentity | null>()
+  const identities = new Map<string, DurableIdentity | null>()
   let identitiesReady = false
   let sessionsReady = false
   let warm: Map<string, HostSession> | null = null
   let foldEpoch = 0
   let foldMarker = 0
+  const pendingDirty = new Set<string>()
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
   let cache: OverviewCache | null = options.cache ?? null
   const cacheOf = (): OverviewCache => {
-    cache ??= createOverviewCache(options.cachePath === undefined ? {} : { path: options.cachePath })
+    if (cache === null) {
+      const generation = `${ACTIVITY_STATE_VERSION}.${TIMELINE_STATE_VERSION}`
+      cache = options.databasePath !== undefined
+        ? createOverviewDatabaseCache({
+          path: options.databasePath,
+          generation,
+          ...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
+        })
+        : options.database === false || options.cachePath !== undefined
+          ? createOverviewCache({ generation, ...(options.cachePath === undefined ? {} : { path: options.cachePath }) })
+          : createOverviewDatabaseCache({ generation })
+    }
     return cache
+  }
+  const databaseOf = (): OverviewStatsDatabase | null => {
+    if (cache === null && options.database === false) return null
+    const bound = cacheOf() as Partial<OverviewDatabaseCache>
+    const database = bound.database
+    return database?.available === true ? database : null
+  }
+  const syncDatabase = (rows: readonly HostRow[], revision: string): void => {
+    const database = databaseOf()
+    if (database === null) return
+    try {
+      database.syncRows(rows, revision)
+    } catch {
+      database.close()
+    }
   }
   const releaseFeed = (): void => {
     if (cache !== null) void cache.flush()
@@ -303,7 +381,7 @@ export function watchOverviewRoute(
       const awaitScan = async (): Promise<ScanResult> => {
         const version = backfill.version()
         if (scan !== null && scanColdIds !== null && scanVersion === version && performance.now() - scanAt < scanTtlMs) {
-          return { entries: scan, coldIds: scanColdIds, fresh: false }
+          return { entries: scan, coldIds: scanColdIds, seq: scanSeq }
         }
         if (inflight !== null) return inflight
         const promise = (async (): Promise<ScanResult> => {
@@ -317,7 +395,8 @@ export function watchOverviewRoute(
           scanColdIds = coldIds
           scanAt = performance.now()
           scanVersion = backfill.version()
-          return { entries, coldIds, fresh: true }
+          scanSeq++
+          return { entries, coldIds, seq: scanSeq }
         })()
         inflight = promise
         try {
@@ -329,46 +408,56 @@ export function watchOverviewRoute(
 
       const syncIdentities = async (
         coldIds: ReadonlySet<string>,
-        fresh: boolean,
+        scanned: ScanResult,
         persistentStat: (id: string) => Promise<unknown>,
       ): Promise<Set<string>> => {
         const dirty = new Set<string>()
+        const next = new Map<string, DurableIdentity | null>()
+        let warmSessions: Map<string, HostSession> | null = null
         if (!identitiesReady) {
           const loaded = await cacheOf().load(coldIds)
-          identities = loaded.identities
-          identitiesReady = true
-          warm = loaded.sessions
+          warmSessions = loaded.sessions
+          for (const id of coldIds) {
+            if (loaded.identities.has(id)) next.set(id, loaded.identities.get(id) ?? null)
+          }
           for (const id of loaded.rebuild) dirty.add(id)
-        } else if (fresh) {
+        } else if (scanned.seq !== validatedScanSeq) {
           const refreshed = await cacheOf().refresh(coldIds, identities)
-          const next = new Map<string, DurableIdentity | null>()
           for (const id of coldIds) {
             const known = refreshed.identities.get(id)
             if (known !== undefined) next.set(id, known)
             else if (identities.has(id)) next.set(id, identities.get(id) ?? null)
           }
-          identities = next
           for (const id of refreshed.changed) dirty.add(id)
+        } else {
+          for (const id of coldIds) next.set(id, identities.get(id) ?? null)
         }
         const missing: string[] = []
         for (const id of coldIds) {
-          if (!identities.has(id)) missing.push(id)
+          if (!next.has(id)) missing.push(id)
         }
         if (missing.length > 0) {
           if (missing.length <= INLINE_CAPTURE_MAX) {
             const captured = await cacheOf().capture(missing, { stat: persistentStat })
             for (const id of missing) {
-              identities.set(id, captured.get(id) ?? null)
+              next.set(id, captured.get(id) ?? null)
               dirty.add(id)
             }
           } else {
             for (const id of missing) {
-              identities.set(id, null)
+              next.set(id, null)
               dirty.add(id)
             }
             captureInBackground(missing, coldIds, persistentStat)
           }
         }
+        for (const id of [...identities.keys()]) {
+          if (!next.has(id)) identities.delete(id)
+        }
+        for (const [id, identity] of next) identities.set(id, identity)
+        identitiesReady = true
+        if (warmSessions !== null) warm = warmSessions
+        validatedScanSeq = scanned.seq
         return dirty
       }
 
@@ -439,7 +528,7 @@ export function watchOverviewRoute(
         const persistentStat = statOf()
         const identityMode = persistentStat !== undefined
         const dirty = identityMode
-          ? await syncIdentities(coldIds, scanned.fresh, persistentStat)
+          ? await syncIdentities(coldIds, scanned, persistentStat)
           : new Set<string>()
         if (identityMode && typeof backfill.foldedSince === 'function') {
           const folded = backfill.foldedSince(foldMarker)
@@ -452,6 +541,7 @@ export function watchOverviewRoute(
             }
           }
         }
+        for (const id of dirty) pendingDirty.add(id)
         if (dirty.size > 0) foldEpoch++
         const backfillVersion = backfill.version()
         const corpusRevision = signaturesOf(entries, entry => (identityMode
@@ -462,13 +552,16 @@ export function watchOverviewRoute(
         const pricingKey = cost.ready() ? `ready${cost.version?.() ?? 0}` : 'cold'
         const revision = revisionOf([corpusRevision, workspace.signature, coverageKey, pricingKey, `f${foldEpoch}`])
         if (feed.revision !== revision) feed.served.clear()
-        const requestKey = requestKeyOf(parsed)
-        if (dirty.size === 0 && parsed.revision !== undefined
+        const now = Date.now()
+        const filters = filtersOf(parsed, now)
+        const timeKey = filters.window.start === null ? '' : dayKeyOf(filters.window.start) ?? ''
+        const requestKey = requestKeyOf(parsed, timeKey)
+        if (pendingDirty.size === 0 && parsed.revision !== undefined
           && parsed.revision === revision && servedOf(feed, requestKey)) {
           return { revision, unchanged: true }
         }
         let rows: HostRow[]
-        if (feed.rows !== null && feed.rowsRevision === revision && sessionsReady && dirty.size === 0) {
+        if (feed.rows !== null && feed.rowsRevision === revision && sessionsReady && pendingDirty.size === 0) {
           rows = feed.rows
         } else {
           if (!sessionsReady) {
@@ -476,7 +569,7 @@ export function watchOverviewRoute(
             for (const [id, session] of cachedSessions) feed.sessions.set(id, session)
             sessionsReady = true
           }
-          for (const id of dirty) feed.sessions.delete(id)
+          for (const id of pendingDirty) feed.sessions.delete(id)
           for (const entry of entries) {
             const session = feed.sessions.get(entry.id)
             if (session !== undefined) session.signature = entry.signature
@@ -490,20 +583,31 @@ export function watchOverviewRoute(
           const built = await buildRows(feed, { entries }, workspace, cacheFace, projections, c, revision, buildOptions)
           feed.rowsRevision = built.incomplete > 0 ? '' : revision
           rows = built.rows
-          if (identityMode && (dirty.size > 0 || built.rebuilt > 0)) saveCache(coldIds)
+          if (identityMode && (pendingDirty.size > 0 || built.rebuilt > 0)) saveCache(coldIds)
+          syncDatabase(rows, revision)
+          pendingDirty.clear()
         }
-        const now = Date.now()
-        const filters = filtersOf(parsed, now)
         const open = filters.day === null && filters.window.start === null && filters.window.end === null
-        const value = valueOf(parsed, revision, cost, {
+        const needsRows = parsed.part !== 'days'
+        const needsScoped = parsed.part === 'page'
+        const data: FeedView = {
           allRows: rows,
-          rows: rows.filter(row => matches(row, filters)),
-          scoped: rows.filter(row => matches(row, { ...filters, group: null, pick: null })),
+          rows: needsRows ? rows.filter(row => matches(row, filters)) : [],
+          scoped: needsScoped ? rows.filter(row => matches(row, { ...filters, group: null, pick: null })) : [],
           workspace,
           coverage: backfill.coverage(),
           filters,
           open,
-        })
+        }
+        const database = databaseOf()
+        let value: OverviewValue
+        try {
+          value = valueOf(parsed, revision, cost, data, database)
+        } catch (err) {
+          if (database === null) throw err
+          database.close()
+          value = valueOf(parsed, revision, cost, data, null)
+        }
         rememberServed(feed, requestKey, servedKeysMax)
         return value
       }
@@ -527,9 +631,9 @@ export function watchOverviewRoute(
   return dispose
 }
 
-function requestKeyOf(parsed: ParsedRequest): string {
+function requestKeyOf(parsed: ParsedRequest, timeKey: string): string {
   return JSON.stringify([
-    parsed.part, parsed.scope, parsed.sort, parsed.page, parsed.tally, parsed.pick,
+    parsed.part, parsed.scope, parsed.sort, parsed.page, parsed.tally, parsed.pick, timeKey,
   ])
 }
 

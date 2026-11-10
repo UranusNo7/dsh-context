@@ -196,6 +196,7 @@ body:not([data-ds-dark-theme]) .lc-ov-session { border-radius: 12px; box-shadow:
 .lc-ov-models-name { display: block; font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
 .lc-ov-models-provider { display: block; font-size: 10px; line-height: 1.4; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .lc-ov-models-cost { font-weight: 600; }
+.lc-ov-models-cost .lc-ov-models-provider { white-space: normal; font-weight: 400; }
 @container lc-card (max-width: 640px) {
   .lc-ov-models-table thead { display: none; }
   .lc-ov-models-table, .lc-ov-models-table tbody, .lc-ov-models-table tr, .lc-ov-models-table td { display: block; }
@@ -210,3 +211,6 @@ body:not([data-ds-dark-theme]) .lc-ov-session { border-radius: 12px; box-shadow:
   .lc-ov-models-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .lc-ov-currency { flex: none; }
+
+.lc-ov-status { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.lc-ov-status-err { color: var(--dsw-alias-state-warn-primary); }

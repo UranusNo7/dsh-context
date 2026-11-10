@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { boot, call, summaryOf, pageOf, tallyOf, revisionOf, recordOf, timelineOf, usageOf, dayOf, currentOf, type BootOptions } from './helpers/overview'
+import { boot, call, summaryOf, pageOf, tallyOf, revisionOf, recordOf, timelineOf, usageOf, dayOf, currentOf, fakeState, fakeOverviewCache, type BootOptions } from './helpers/overview'
 import type { DurableIdentity, OverviewCache } from '../../src/host/overviewCache'
 import type { HostSession } from '../../src/host/overviewCorpus'
 import type { ActivityDay } from '../../src/shared/types'
@@ -315,6 +315,22 @@ describe('overview memory: disk cache, idle release, incremental updates', () =>
     harness.dispose()
   })
 
+  test('loaded null identities rebuild once and remain known within the shared scan', async () => {
+    const harness = await identityBoot({ scanTtlMs: 10_000 })
+    for (const id of ['a', 'b']) {
+      harness.state.cachedSessions.set(id, hostSessionOf(id, { tokens: 999 }))
+      harness.state.cachedIdentities.set(id, null)
+      harness.state.diskRebuild.push(id)
+    }
+    const first = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(first).tokens, 32)
+    const next = await call(harness, { part: 'page' })
+    assert.equal(pageOf(next).items.length, 2)
+    assert.equal(harness.cache.captureCalls.length, 0, 'known null identities are not recaptured')
+    assert.equal(harness.cache.refreshCalls, 0, 'the same scan does not revalidate')
+    harness.dispose()
+  })
+
   test('capture answers missing from the cache fall back to an unvalidatable identity', async () => {
     const harness = await identityBoot()
     harness.state.captureMissing = ['a', 'b']
@@ -572,8 +588,160 @@ describe('overview memory: disk cache, idle release, incremental updates', () =>
     assert.deepEqual(harness.calls.cached.sort(), ['a', 'b', 'c'], 'every cold id is read exactly once')
     assert.equal(yields, 3, 'only one build pass crossed the yield boundaries')
     assert.equal(harness.cache.captureCalls.length, 1, 'identities are captured once for the burst')
+    assert.equal(harness.cache.refreshCalls, 0, 'the cold load already validated every identity')
     assert.equal(harness.cache.saveCalls, 1, 'the materialized rows are persisted once')
     assert.equal(harness.cache.loadCalls, 1)
+    harness.dispose()
+  })
+
+  test('one durable identity validation per scan, shared by every part in a burst', async () => {
+    const harness = await boot({
+      persistence: PERSISTENCE,
+      records: [recordOf('a'), recordOf('b'), recordOf('c')],
+      values: { a: valuesOf(10), b: valuesOf(20), c: valuesOf(30) },
+      scanTtlMs: 10,
+    })
+    for (const id of ['a', 'b', 'c']) harness.state.captureIdentities.set(id, identityOf(id))
+    const burst = (): Promise<unknown[]> => Promise.all([
+      call(harness, { part: 'summary' }),
+      call(harness, { part: 'days' }),
+      call(harness, { part: 'page' }),
+      call(harness, { part: 'tally', tally: 'skills' }),
+      call(harness, { part: 'tally', tally: 'tools' }),
+      call(harness, { part: 'tally', tally: 'cmds' }),
+    ])
+    await burst()
+    assert.equal(harness.calls.list, 1)
+    assert.equal(harness.cache.loadCalls, 1, 'the cold burst loads the cache once')
+    assert.equal(harness.cache.refreshCalls, 0, 'the load already validated every identity')
+    assert.equal(harness.cache.captureCalls.length, 1)
+    await burst()
+    assert.equal(harness.calls.list, 1, 'the burst inside the scan TTL reuses the scan')
+    assert.equal(harness.cache.refreshCalls, 0, 'a reused scan validates nothing again')
+    await sleep(20)
+    await burst()
+    assert.equal(harness.calls.list, 2, 'the next scan lists again')
+    assert.equal(harness.cache.refreshCalls, 1, 'the next scan refreshes once for all six parts')
+    harness.dispose()
+  })
+
+  test('a failed identity validation is retried and keeps its dirty rebuild', async () => {
+    const state = fakeState({
+      cachedSessions: new Map([['a', hostSessionOf('a')], ['b', hostSessionOf('b')]]),
+      cachedIdentities: new Map([['a', identityOf('a')], ['b', identityOf('b')]]),
+      captureIdentities: new Map([['a', identityOf('a')], ['b', identityOf('b')]]),
+    })
+    const cache = fakeOverviewCache(state)
+    const refresh = cache.refresh
+    let attempts = 0
+    cache.refresh = async (ids, known) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('refresh broke')
+      return refresh(ids, known)
+    }
+    const harness = await boot({
+      persistence: PERSISTENCE,
+      records: [recordOf('a'), recordOf('b')],
+      values: { a: valuesOf(10), b: valuesOf(20) },
+      cache,
+      scanTtlMs: 10_000,
+    })
+    const first = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(first).sessions, 2)
+    assert.equal(harness.cache.loadCalls, 1)
+    const cachedReads = harness.calls.cached.length
+    state.refreshChanged = ['a']
+    state.captureIdentities.set('a', identityOf('a', 40, 9))
+    harness.state.backfillVersion = 1
+    const failed = await call(harness, { part: 'summary' })
+    assert.equal(failed.reply.ok, false, 'the failed validation fails the request')
+    assert.match(failed.reply.error?.message ?? '', /refresh broke/)
+    const retried = await call(harness, { part: 'summary' })
+    assert.equal(retried.reply.ok, true, 'the same scan is validated again on retry')
+    assert.equal(attempts, 2, 'the retry validates the scan again')
+    assert.equal(harness.cache.refreshCalls, 1, 'only the successful validation counts')
+    assert.ok(harness.calls.cached.length > cachedReads, 'the retried dirty session is rebuilt')
+    harness.dispose()
+  })
+
+  test('a failed capture leaves the refreshed identities uncommitted and retries both changes', async () => {
+    const state = fakeState({
+      cachedSessions: new Map([['a', hostSessionOf('a', { tokens: 10 })]]),
+      cachedIdentities: new Map([['a', identityOf('a')]]),
+      captureIdentities: new Map([['a', identityOf('a')], ['b', identityOf('b')]]),
+    })
+    const cache = fakeOverviewCache(state)
+    const capture = cache.capture
+    let captures = 0
+    cache.capture = async (ids, host) => {
+      captures += 1
+      if (captures === 1) throw new Error('capture broke')
+      return capture(ids, host)
+    }
+    const listed: unknown[] = [recordOf('a')]
+    const harness = await boot({
+      persistence: PERSISTENCE,
+      records: listed,
+      listSessions: async () => listed,
+      values: { a: valuesOf(10), b: valuesOf(20) },
+      cache,
+      scanTtlMs: 10_000,
+    })
+    const warm = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(warm).sessions, 1)
+    assert.equal(summaryOf(warm).tokens, 11)
+    state.refreshChanged = ['a']
+    state.captureIdentities.set('a', identityOf('a', 40, 9))
+    harness.cacheMode.values.a = valuesOf(99)
+    listed.push(recordOf('b'))
+    harness.state.backfillVersion = 1
+    const failed = await call(harness, { part: 'summary' })
+    assert.equal(failed.reply.ok, false, 'the failed capture fails the request')
+    assert.match(failed.reply.error?.message ?? '', /capture broke/)
+    const retried = await call(harness, { part: 'summary' })
+    assert.equal(retried.reply.ok, true)
+    assert.equal(summaryOf(retried).sessions, 2, 'the new session lands on the retry')
+    assert.equal(summaryOf(retried).tokens, 121, 'the changed session and the new session both rebuild')
+    assert.equal(captures, 2, 'the capture retries')
+    assert.equal(harness.cache.refreshCalls, 2, 'the changed identity refreshes again after the failed commit')
+    assert.ok(state.savedRecords.every(record => record.identity !== null), 'both identities persist')
+    harness.dispose()
+  })
+
+  test('a successful validation prunes ids that left the scan from the identity map', async () => {
+    const state = fakeState({
+      cachedSessions: new Map([['a', hostSessionOf('a')], ['b', hostSessionOf('b')]]),
+      cachedIdentities: new Map([['a', identityOf('a')], ['b', identityOf('b')]]),
+      captureIdentities: new Map([['a', identityOf('a')], ['b', identityOf('b')]]),
+    })
+    const cache = fakeOverviewCache(state)
+    const refresh = cache.refresh
+    const knowns: string[][] = []
+    cache.refresh = async (ids, known) => {
+      knowns.push([...known.keys()])
+      return refresh(ids, known)
+    }
+    const listed: unknown[] = [recordOf('a'), recordOf('b')]
+    const harness = await boot({
+      persistence: PERSISTENCE,
+      records: listed,
+      listSessions: async () => listed,
+      values: { a: valuesOf(10), b: valuesOf(20) },
+      cache,
+      scanTtlMs: 10_000,
+    })
+    const warm = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(warm).sessions, 2)
+    listed.length = 0
+    listed.push(recordOf('b'))
+    harness.state.backfillVersion = 1
+    const dropped = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(dropped).sessions, 1)
+    assert.deepEqual(knowns[0]?.sort(), ['a', 'b'], 'the scan that removes a still validates it')
+    harness.state.backfillVersion = 2
+    const next = await call(harness, { part: 'summary' })
+    assert.equal(summaryOf(next).sessions, 1)
+    assert.deepEqual(knowns[1], ['b'], 'the removed id is pruned from the identity map')
     harness.dispose()
   })
 

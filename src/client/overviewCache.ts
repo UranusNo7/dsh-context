@@ -3,7 +3,11 @@ import { makeRetentionCache } from './retention'
 
 export type OverviewCachedValue = Exclude<OverviewValue, OverviewUnchanged>
 
-const parts = makeRetentionCache<string, OverviewCachedValue>('overviewRows')
+const encoder = new TextEncoder()
+
+const parts = makeRetentionCache<string, OverviewCachedValue>('overviewRows', {
+  sizeOf: value => encoder.encode(JSON.stringify(value)).byteLength,
+})
 
 export function readOverviewPart(key: string): OverviewCachedValue | undefined {
   return parts.get(key)
@@ -25,4 +29,8 @@ export function resetOverviewCache(): void {
 
 export function overviewCacheSize(): number {
   return parts.size
+}
+
+export function overviewCacheBytes(): number {
+  return parts.bytes
 }

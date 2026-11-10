@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { watchOverviewRoute, OVERVIEW_ROUTE } from '../../../src/host/overview'
 import type { BackfillHandle } from '../../../src/host/backfill'
@@ -93,6 +96,7 @@ export interface BootOptions {
   coverage?: BackfillCoverage
   backfillVersion?: number
   costReady?: boolean
+  costSource?: CostSource
   costUnpriced?: (provider: string, model: string) => boolean
   scanTtlMs?: number
   servedKeysMax?: number
@@ -107,8 +111,18 @@ export interface BootOptions {
   yieldEvery?: number
   yieldTo?: () => Promise<void>
   cachePath?: string
+  databasePath?: string
+  costVersion?: () => number
   foldedAvailable?: boolean
   noCache?: boolean
+}
+
+export function overviewTempDir(): string {
+  const root = resolve('.tmp')
+  mkdirSync(root, { recursive: true })
+  const dir = mkdtempSync(join(root, 'dsh-overview-'))
+  onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
+  return dir
 }
 
 export const OPEN_COVERAGE: BackfillCoverage = {
@@ -148,11 +162,16 @@ export function numOf(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-export function fakeCost(ready: boolean, unpriced?: (provider: string, model: string) => boolean): CostSource {
+export function fakeCost(
+  ready: boolean,
+  unpriced?: (provider: string, model: string) => boolean,
+  version?: () => number,
+): CostSource {
   return {
     ready: () => ready,
     read: (usage) => ({ usd: ready ? costOfUsage(usage, unpriced) : null, ready }),
     usd: (usage) => (ready ? costOfUsage(usage, unpriced) : null),
+    ...(version === undefined ? {} : { version }),
   }
 }
 
@@ -426,14 +445,21 @@ export function boot(options: BootOptions = {}): Promise<Harness> {
     : (options.cache as FakeOverviewCache | undefined) ?? fakeOverviewCache(state)
   const routeOptions = {
     scanTtlMs: options.scanTtlMs ?? 0,
+    database: options.databasePath !== undefined,
     ...(options.servedKeysMax === undefined ? {} : { servedKeysMax: options.servedKeysMax }),
     ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
     ...(options.yieldEvery === undefined ? {} : { yieldEvery: options.yieldEvery }),
     ...(options.yieldTo === undefined ? {} : { yieldTo: options.yieldTo }),
     ...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
+    ...(options.databasePath === undefined ? {} : { databasePath: options.databasePath }),
     ...(cache === null ? {} : { cache }),
   }
-  const dispose = watchOverviewRoute(ctx, fakeCost(state.costReady, options.costUnpriced), fakeBackfill(state), routeOptions)
+  const dispose = watchOverviewRoute(
+    ctx,
+    options.costSource ?? fakeCost(state.costReady, options.costUnpriced, options.costVersion),
+    fakeBackfill(state),
+    routeOptions,
+  )
   return (async () => {
     for (let index = 0; index < 300 && !routes.has(OVERVIEW_ROUTE); index++) {
       await new Promise(resolve => setTimeout(resolve, 1))

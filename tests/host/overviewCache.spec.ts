@@ -189,6 +189,35 @@ describe('overviewCache', () => {
     }
   })
 
+  test('the configured generation rejects a missing or older file and stamps every write', async () => {
+    const fs = fakeFs()
+    const records = [{ session: sessionOf('root'), identity: identityOf('/logs/root', 1, 1) }]
+    storeFile(fs, PATH, records)
+    fs.stats.set('/logs/root', { size: 1, mtimeMs: 1 })
+    const cache = createOverviewCache({ path: PATH, fs, generation: '7.42' })
+    const legacy = await cache.load(new Set(['root']))
+    assert.deepEqual([...legacy.sessions.keys()], [], 'a file without a generation never serves its rows')
+    assert.deepEqual([...legacy.identities.keys()], [])
+    fs.files.set(PATH, JSON.stringify({ format: OVERVIEW_CACHE_FORMAT, generation: '7.41', savedAt: 1, sessions: records }))
+    assert.deepEqual([...(await cache.load(new Set(['root']))).sessions.keys()], [], 'an older generation reads empty')
+    fs.files.set(PATH, JSON.stringify({ format: OVERVIEW_CACHE_FORMAT, generation: '7.42', savedAt: 1, sessions: records }))
+    assert.deepEqual([...(await cache.load(new Set(['root']))).sessions.keys()], ['root'], 'the current generation is reused')
+    cache.save(records)
+    await cache.flush()
+    const written = JSON.parse(fs.files.get(PATH) ?? '{}') as { generation?: string; sessions: CachedSession[] }
+    assert.equal(written.generation, '7.42')
+    assert.deepEqual(written.sessions.map(record => record.session.id), ['root'])
+    cache.dispose()
+    const plain = createOverviewCache({ path: '/plain.json', fs, debounceMs: 0 })
+    storeFile(fs, '/plain.json', records)
+    const ungenerated = await plain.load(new Set(['root']), new Map([['root', identityOf('/logs/root', 1, 1)]]))
+    assert.deepEqual([...ungenerated.sessions.keys()], ['root'], 'an unconfigured cache keeps the stored shape')
+    plain.save(records)
+    await plain.flush()
+    assert.equal('generation' in (JSON.parse(fs.files.get('/plain.json') ?? '{}') as object), false)
+    plain.dispose()
+  })
+
   test('load rebuilds changed, missing, and unvalidatable records and reuses the unchanged ones', async () => {
     const fs = fakeFs()
     const cache = createOverviewCache({ path: PATH, fs, statConcurrency: 2 })

@@ -8,6 +8,7 @@ import { IconData } from '../primitives'
 export interface OverviewUsageProps {
   days: Record<string, DayTotals>
   currency: CostCurrency
+  pricingReady?: boolean
   today: string
 }
 
@@ -50,6 +51,7 @@ export function makeOverviewUsage(kit: ViewKit): (props: OverviewUsageProps) => 
             <IconData size={14} />
             {t('ov.usage.title')}
           </span>
+          {props.pricingReady === false && <span className="lc-card-sub">{t('ov.pricingPending')}</span>}
         </div>
         {empty || window.length === 0
           ? <div className="lc-empty">{t('ov.usage.empty')}</div>

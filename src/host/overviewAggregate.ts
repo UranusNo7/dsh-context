@@ -278,6 +278,11 @@ function partsOf(rows: readonly HostRow[], filters: Filters, open: boolean): { p
   return { parts, total }
 }
 
+export interface SummaryRootUsage {
+  usage: SessionCostUsage | null
+  turns: number
+}
+
 export function summaryOf(
   allRows: readonly HostRow[],
   rows: readonly HostRow[],
@@ -285,6 +290,7 @@ export function summaryOf(
   cost: CostSource,
   coverage: BackfillCoverage,
   open: boolean,
+  roots?: readonly SummaryRootUsage[],
 ): OverviewSummary {
   const split = partsOf(rows, filters, open)
   let usage: SessionCostUsage | null = null
@@ -292,15 +298,27 @@ export function summaryOf(
   let costSessions = 0
   let usageSessions = 0
   let sessionsArchived = 0
-  for (const row of rows) {
-    const rowUsage = open ? row.familyCost : windowUsageOf(row.activity, filters)
-    usage = mergeCostUsage(usage, rowUsage)
-    turns += open
-      ? row.family.reduce((sum, member) => sum + (member.timeline?.turns ?? 0), 0)
-      : windowTurnsOf(row.activity, filters)
-    if (cost.usd(rowUsage) !== null) costSessions++
-    if (usageTotalsOf(rowUsage) !== null) usageSessions++
-    if (row.archived) sessionsArchived++
+  if (roots === undefined) {
+    for (const row of rows) {
+      const rowUsage = open ? row.familyCost : windowUsageOf(row.activity, filters)
+      usage = mergeCostUsage(usage, rowUsage)
+      turns += open
+        ? row.family.reduce((sum, member) => sum + (member.timeline?.turns ?? 0), 0)
+        : windowTurnsOf(row.activity, filters)
+      if (cost.usd(rowUsage) !== null) costSessions++
+      if (usageTotalsOf(rowUsage) !== null) usageSessions++
+      if (row.archived) sessionsArchived++
+    }
+  } else {
+    for (const root of roots) {
+      usage = mergeCostUsage(usage, root.usage)
+      turns += root.turns
+      if (cost.usd(root.usage) !== null) costSessions++
+      if (usageTotalsOf(root.usage) !== null) usageSessions++
+    }
+    for (const row of rows) {
+      if (row.archived) sessionsArchived++
+    }
   }
   const totals = usageTotalsOf(usage)
   const splitTotal = split === null ? null : split.parts.reduce((sum, part) => sum + part.value, 0)

@@ -224,7 +224,20 @@ function lookupBranch(branch: PriceBranch, model: string): BranchLookup {
     if (picked.kind === 'ambiguous') return picked
     return { kind: 'hit', face: faceOf(picked.candidate, stage.via, stage.confidence) }
   }
-  return { kind: 'miss' }
+  const canonicalKey = exact.replace(/[._]/g, '-')
+  const candidates: PriceCandidate[] = []
+  for (const entries of branch.byExact.values()) {
+    for (const candidate of entries) {
+      if (candidate.canonical === undefined || candidate.lab !== branch.pid) continue
+      const canonical = bareModelOf(lowerModelId(candidate.canonical)).replace(/[._]/g, '-')
+      const rolling = canonical.replace(/-(?:\d{8}|\d{6}|(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))$/, '')
+      if (canonicalKey === canonical || canonicalKey === rolling) candidates.push(candidate)
+    }
+  }
+  candidates.sort((left, right) => left.mid.length - right.mid.length)
+  const picked = pickCandidates(candidates)
+  if (picked.kind !== 'hit') return picked
+  return { kind: 'hit', face: faceOf(picked.candidate, 'canonical-maker', 'medium') }
 }
 
 function lookupModel(branch: PriceBranch, model: string): BranchLookup {
@@ -307,6 +320,7 @@ export function priceResolutionOf(book: ModelBook | null | undefined, provider: 
 }
 
 function resolvePriceOf(book: ModelBook, provider: string, model: string): PriceResolution {
+  const subscription = isSubscriptionPlanProvider(provider)
   const routed = routedBranch(book, provider)
   if (routed !== null) {
     const match = lookupModel(routed.branch, model)
@@ -319,7 +333,10 @@ function resolvePriceOf(book: ModelBook, provider: string, model: string): Price
     const branch = book.index.branches.get(org)
     if (branch !== undefined) {
       const match = lookupBranch(branch, bareModelOf(model))
-      if (match.kind === 'hit') return priced({ ...match.face, via: 'org-branch', confidence: 'high' })
+      if (match.kind === 'hit') {
+        const maker = match.face.canonical === undefined ? familyVendorOf(model) : labOf(match.face.canonical)
+        if (!subscription || maker === org) return priced({ ...match.face, via: 'org-branch', confidence: 'high' })
+      }
       if (match.kind === 'ambiguous') return ambiguous(match.count)
     }
   }
@@ -347,6 +364,7 @@ function resolvePriceOf(book: ModelBook, provider: string, model: string): Price
       }
     }
   }
+  if (subscription) return unpriced('no-entry')
   const picked = pickCandidates(candidates)
   if (picked.kind === 'hit') return priced(faceOf(picked.candidate, 'index', 'low'))
   if (picked.kind === 'ambiguous') return ambiguous(picked.count)

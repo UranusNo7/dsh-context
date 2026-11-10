@@ -68,6 +68,8 @@ export interface OverviewSkillsProps {
   selected?: string | null
   onSelect?: (name: string | null) => void
   catalog?: ReadonlyMap<string, SkillInfo> | null
+  loading?: boolean
+  failed?: boolean
 }
 
 export function makeOverviewSkills(kit: ViewKit): (props: OverviewSkillsProps) => ReactElement {
@@ -119,6 +121,8 @@ export function makeOverviewSkills(kit: ViewKit): (props: OverviewSkillsProps) =
     }
 
     const selected = props.selected
+    const loading = props.loading === true
+    const failed = props.failed === true
     const pinnedStat = selected === null || selected === undefined
       ? undefined
       : stats.find(s => s.name === selected)
@@ -206,10 +210,14 @@ export function makeOverviewSkills(kit: ViewKit): (props: OverviewSkillsProps) =
         icon={<IconSkill size={14} />}
         title={t('stats.skills')}
         day={props.day}
-        summary={t('ov.skills.summary', { skills: fmt(stats.length), loads: fmt(total) })}
+        summary={loading || (failed && stats.length === 0) ? '—' : t('ov.skills.summary', { skills: fmt(stats.length), loads: fmt(total) })}
       >
         {!pinnedRowVisible && detailBlock}
-        {stats.length === 0 ? (
+        {loading ? (
+          <div className="lc-empty">{t('ov.loading')}</div>
+        ) : failed && stats.length === 0 ? (
+          <div className="lc-empty">{t('ov.loadFailed')}</div>
+        ) : stats.length === 0 ? (
           <div className="lc-empty">{t('ov.skills.empty')}</div>
         ) : (
           <div className="lc-ov-tallies" role="group" aria-label={t('stats.skills')}>

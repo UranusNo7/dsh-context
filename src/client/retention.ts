@@ -24,7 +24,7 @@ export const RETENTION = {
   fleetPreview: { scope: 'session', maxEntries: 64, maxBytes: 4 * MIB, minEntries: 1, ttlMs: 5 * MINUTE },
   fleetHistory: { scope: 'session', maxEntries: 64, maxBytes: 4 * MIB, minEntries: 1, ttlMs: 5 * MINUTE },
   fleetFull: { scope: 'session', maxEntries: 4, maxBytes: 4 * MIB, minEntries: 1, ttlMs: 5 * MINUTE },
-  overviewRows: { scope: 'global', maxEntries: 12, ttlMs: MINUTE },
+  overviewRows: { scope: 'global', maxEntries: 12, maxBytes: 4 * MIB, ttlMs: 5 * MINUTE },
   commandHighlight: { scope: 'global', maxEntries: 600, ttlMs: 10 * MINUTE },
   commandResults: { scope: 'session', maxEntries: 8 },
   contentMissValues: { scope: 'session', maxEntries: 32 },
