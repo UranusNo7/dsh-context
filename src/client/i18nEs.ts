@@ -623,6 +623,7 @@ export const DICT_ES = {
   'ov.title': 'Análisis del contexto',
   'ov.unavailable': 'La lista de sesiones no está disponible',
   'ov.loading': 'Cargando información…',
+  'ov.pricingPending': 'Precios aún no disponibles: actualización automática',
   'ov.updating': 'Actualizando…',
   'ov.notUpdated': 'Error al actualizar: se muestran los últimos datos cargados',
   'ov.loadFailed': 'Error al cargar: se reintentará automáticamente',

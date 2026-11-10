@@ -623,6 +623,7 @@ export const DICT_PT = {
   'ov.title': 'Insights de contexto',
   'ov.unavailable': 'A lista de sessões está indisponível',
   'ov.loading': 'Carregando insights…',
+  'ov.pricingPending': 'Preços ainda indisponíveis — atualização automática',
   'ov.updating': 'Atualizando…',
   'ov.notUpdated': 'Falha na atualização — mostrando os últimos dados carregados',
   'ov.loadFailed': 'Falha ao carregar — nova tentativa automática',

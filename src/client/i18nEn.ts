@@ -623,6 +623,7 @@ export const DICT_EN = {
   'ov.title': 'Context Insights',
   'ov.unavailable': 'The session list is unavailable',
   'ov.loading': 'Loading insights…',
+  'ov.pricingPending': 'Prices unavailable yet — updating automatically',
   'ov.updating': 'Updating…',
   'ov.notUpdated': 'Update failed — showing the last loaded data',
   'ov.loadFailed': 'Failed to load — retrying automatically',

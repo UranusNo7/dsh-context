@@ -303,7 +303,7 @@ export function makeOverviewPanel(
                     <div className="lc-stat lc-ov-kpi">
                       <span className="lc-stat-label">{t('stats.cost')}</span>
                       <span className="lc-stat-value">{summary === null || summary.costUsd === null ? '—' : formatCost(toCurrency(summary.costUsd, currency), currency)}</span>
-                      <span className="lc-stat-sub">{summary === null ? '—' : t('ov.kpi.pricedSub', { n: summary.costSessions, total: summary.sessions })}</span>
+                      <span className="lc-stat-sub">{summary === null ? '—' : summaryState.data?.pricingReady === false ? t('ov.pricingPending') : t('ov.kpi.pricedSub', { n: summary.costSessions, total: summary.sessions })}</span>
                     </div>
                     <div className="lc-stat lc-ov-kpi">
                       <span className="lc-stat-label">{t('stats.cacheHit')}</span>
@@ -323,7 +323,7 @@ export function makeOverviewPanel(
                   </div>
                   {daysState.data === null ? (
                     <div className="lc-card lc-ov-usage"><div className="lc-empty">{t(daysState.error ? 'ov.loadFailed' : 'ov.loading')}</div></div>
-                  ) : <OverviewUsage days={days} currency={currency} today={todayKey()} />}
+                  ) : <OverviewUsage days={days} currency={currency} today={todayKey()} pricingReady={daysState.data.pricingReady} />}
                 </div>
                 <div className="lc-ov-stats">
                   {summary === null ? (<>
@@ -336,7 +336,7 @@ export function makeOverviewPanel(
                 </div>
                 {summary?.models !== undefined && summary.models.length > 0 ? (
                   <div className="lc-ov-models-row">
-                    <OverviewModels models={summary.models} currency={currency} />
+                    <OverviewModels models={summary.models} currency={currency} pricingReady={summaryState.data?.pricingReady} />
                   </div>
                 ) : null}
                 <div className="lc-ov-body" ref={bodyRef}>

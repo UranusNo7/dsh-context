@@ -621,6 +621,7 @@ export const DICT_ZH = {
   'ov.title': '上下文洞察',
   'ov.unavailable': '会话列表暂不可用',
   'ov.loading': '正在加载洞察…',
+  'ov.pricingPending': '价格暂未就绪，获取后自动更新',
   'ov.updating': '正在更新…',
   'ov.notUpdated': '更新失败，显示上次加载的数据',
   'ov.loadFailed': '加载失败，正在自动重试',

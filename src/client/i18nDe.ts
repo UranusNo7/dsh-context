@@ -623,6 +623,7 @@ export const DICT_DE = {
   'ov.title': 'Kontext-Einblicke',
   'ov.unavailable': 'Die Sitzungsliste ist nicht verfügbar',
   'ov.loading': 'Einblicke werden geladen…',
+  'ov.pricingPending': 'Preise noch nicht verfügbar — automatische Aktualisierung',
   'ov.updating': 'Wird aktualisiert…',
   'ov.notUpdated': 'Aktualisierung fehlgeschlagen — die zuletzt geladenen Daten werden angezeigt',
   'ov.loadFailed': 'Laden fehlgeschlagen — automatischer Neuversuch',

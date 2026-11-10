@@ -62,6 +62,16 @@ describe('OverviewModels', () => {
     }
   })
 
+  test('pending prices are distinct from unpriced models without hiding existing money or tokens', async () => {
+    const m = await mount(h(OverviewModels, { models: MODELS, currency: 'usd', pricingReady: false }))
+    assert.ok(text(m.container).includes(DICT_EN['ov.pricingPending']))
+    assert.ok(!text(m.container).includes(DICT_EN['ov.models.sub']))
+    assert.equal(cellsOf(rowsOf(m.container)[0])[6], '$1.50')
+    assert.equal(cellsOf(rowsOf(m.container)[1])[6], '—')
+    assert.equal(cellsOf(rowsOf(m.container)[0])[5], '7.4k')
+    await m.unmount()
+  })
+
   test('an unpriced model shows — and the currency preference converts only priced rows', async () => {
     const usd = await mount(h(OverviewModels, { models: MODELS, currency: 'usd' }))
     assert.deepEqual(cellsOf(rowsOf(usd.container)[1]), ['vendor/unknown-modelopenrouter', '300', '0', '0', '100', '400', '—'])

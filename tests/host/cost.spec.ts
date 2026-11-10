@@ -154,6 +154,8 @@ describe('host cost source plumbing', () => {
     assert.equal(ensures, 1, 'a ready book still asks for the TTL refresh check')
     cost.usd(USING)
     assert.equal(ensures, 2)
+    assert.equal(cost.ready(), true)
+    assert.equal(ensures, 3, 'readiness checks also ensure TTL and failure-backoff recovery')
     version = 7
     assert.equal(cost.version?.(), 7)
   })

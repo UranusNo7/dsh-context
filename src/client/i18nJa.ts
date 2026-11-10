@@ -623,6 +623,7 @@ export const DICT_JA = {
   'ov.title': 'コンテキストインサイト',
   'ov.unavailable': 'セッション一覧を利用できません',
   'ov.loading': '洞察を読み込み中…',
+  'ov.pricingPending': '価格情報は未取得です。自動更新します',
   'ov.updating': '更新中…',
   'ov.notUpdated': '更新に失敗しました。前回読み込んだデータを表示しています',
   'ov.loadFailed': '読み込みに失敗しました。自動的に再試行します',

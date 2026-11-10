@@ -98,6 +98,18 @@ describe('OverviewUsage', () => {
     await m.unmount()
   })
 
+  test('pending prices leave both existing series visible and state that prices will update', async () => {
+    const m = await mount(h(OverviewUsage, {
+      days: { '2026-09-16': day({ tokens: 500, cost: 1 }) },
+      currency: 'usd', today: TODAY, pricingReady: false,
+    }))
+    assert.ok(text(m.container).includes(kit.t('ov.pricingPending')))
+    assert.equal(queryAll(m.container, '.lc-ov-usage-col').length, 7)
+    assert.equal((queryAll(m.container, '.lc-ov-usage-cost')[6] as HTMLElement).style.height, '100%')
+    assert.ok(text(m.container).includes('$1.00'))
+    await m.unmount()
+  })
+
   test('an unpriced window reads the cost rail as dashes; the bars stay', async () => {
     const m = await mount(h(OverviewUsage, {
       days: { '2026-09-16': day({ tokens: 500, cost: null }) },

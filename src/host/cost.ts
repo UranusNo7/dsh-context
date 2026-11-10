@@ -37,6 +37,7 @@ function missOf(provider: string, model: string, miss: PriceMiss): CostPriceMiss
 export function createCostSource(catalog: CatalogService): CostSource {
   return {
     ready(): boolean {
+      catalog.ensure()
       return catalog.book() !== null
     },
     read(usage: SessionCostUsage | null | undefined): SessionCostRead | undefined {

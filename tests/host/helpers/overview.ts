@@ -93,6 +93,7 @@ export interface BootOptions {
   coverage?: BackfillCoverage
   backfillVersion?: number
   costReady?: boolean
+  costSource?: CostSource
   costUnpriced?: (provider: string, model: string) => boolean
   scanTtlMs?: number
   servedKeysMax?: number
@@ -444,7 +445,7 @@ export function boot(options: BootOptions = {}): Promise<Harness> {
   }
   const dispose = watchOverviewRoute(
     ctx,
-    fakeCost(state.costReady, options.costUnpriced, options.costVersion),
+    options.costSource ?? fakeCost(state.costReady, options.costUnpriced, options.costVersion),
     fakeBackfill(state),
     routeOptions,
   )

@@ -8,6 +8,7 @@ import { IconDatabase } from '../primitives'
 export interface OverviewModelsProps {
   models: readonly OverviewModelUsage[]
   currency: CostCurrency
+  pricingReady?: boolean
 }
 
 export function makeOverviewModels(kit: ViewKit): (props: OverviewModelsProps) => ReactElement {
@@ -21,7 +22,7 @@ export function makeOverviewModels(kit: ViewKit): (props: OverviewModelsProps) =
             <IconDatabase size={14} />
             {t('ov.models.title')}
           </span>
-          <span className="lc-card-sub">{t('ov.models.sub')}</span>
+          <span className="lc-card-sub">{t(props.pricingReady === false ? 'ov.pricingPending' : 'ov.models.sub')}</span>
         </div>
         <table className="lc-ov-models-table">
           <thead>
