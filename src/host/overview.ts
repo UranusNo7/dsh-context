@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { performance } from 'node:perf_hooks'
+import { dayKeyOf } from '../shared/days'
 import type {
   BackfillCoverage,
   OverviewCoverage,
@@ -547,7 +548,10 @@ export function watchOverviewRoute(
         const pricingKey = cost.ready() ? `ready${cost.version?.() ?? 0}` : 'cold'
         const revision = revisionOf([corpusRevision, workspace.signature, coverageKey, pricingKey, `f${foldEpoch}`])
         if (feed.revision !== revision) feed.served.clear()
-        const requestKey = requestKeyOf(parsed)
+        const now = Date.now()
+        const filters = filtersOf(parsed, now)
+        const timeKey = filters.window.start === null ? '' : dayKeyOf(filters.window.start) ?? ''
+        const requestKey = requestKeyOf(parsed, timeKey)
         if (pendingDirty.size === 0 && parsed.revision !== undefined
           && parsed.revision === revision && servedOf(feed, requestKey)) {
           return { revision, unchanged: true }
@@ -579,8 +583,6 @@ export function watchOverviewRoute(
           syncDatabase(rows, revision)
           pendingDirty.clear()
         }
-        const now = Date.now()
-        const filters = filtersOf(parsed, now)
         const open = filters.day === null && filters.window.start === null && filters.window.end === null
         const needsRows = parsed.part !== 'days'
         const needsScoped = parsed.part === 'page'
@@ -625,9 +627,9 @@ export function watchOverviewRoute(
   return dispose
 }
 
-function requestKeyOf(parsed: ParsedRequest): string {
+function requestKeyOf(parsed: ParsedRequest, timeKey: string): string {
   return JSON.stringify([
-    parsed.part, parsed.scope, parsed.sort, parsed.page, parsed.tally, parsed.pick,
+    parsed.part, parsed.scope, parsed.sort, parsed.page, parsed.tally, parsed.pick, timeKey,
   ])
 }
 

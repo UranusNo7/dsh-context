@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { watchOverviewRoute, OVERVIEW_ROUTE } from '../../../src/host/overview'
 import type { BackfillHandle } from '../../../src/host/backfill'
@@ -112,6 +115,14 @@ export interface BootOptions {
   costVersion?: () => number
   foldedAvailable?: boolean
   noCache?: boolean
+}
+
+export function overviewTempDir(): string {
+  const root = resolve('.tmp')
+  mkdirSync(root, { recursive: true })
+  const dir = mkdtempSync(join(root, 'dsh-overview-'))
+  onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
+  return dir
 }
 
 export const OPEN_COVERAGE: BackfillCoverage = {

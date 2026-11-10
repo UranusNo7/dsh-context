@@ -3,6 +3,7 @@ import type {
   BackfillCoverage, OverviewDay, OverviewModelUsage, OverviewPage, OverviewPartTotal, OverviewRequest,
   OverviewScope, OverviewSummary, OverviewTally, OverviewTallyStat, OverviewValue, TimingTotals,
 } from '../shared/types'
+import { dayKeyOf } from '../shared/days'
 import { BACKFILL_ROUTE, OVERVIEW_ROUTE } from './apiRoutes'
 import { postRoute } from './route'
 import { asRecord } from './services'
@@ -261,7 +262,11 @@ export function resetOverviewRevision(): void {
 
 function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
   const { request, enabled, pick } = options
-  const key = request === null ? '' : JSON.stringify(request)
+  const range = request?.scope?.range
+  const relative = range === 'today' || range === '7d' || range === '30d'
+  const day = relative ? dayKeyOf(Date.now()) : null
+  const [, refreshDay] = useState(0)
+  const key = request === null ? '' : JSON.stringify(request) + (relative ? `\u0000${day}` : '')
   const pickRef = useRef(pick)
   pickRef.current = pick
   const [data, setData] = useState<T | null>(null)
@@ -367,7 +372,10 @@ function useOverviewPart<T>(options: PartOptions<T>): PartState<T> {
     })
     schedule(0)
     const pollTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') void fetchNow()
+      if (document.visibilityState === 'visible') {
+        if (relative && dayKeyOf(Date.now()) !== day) refreshDay(tick => tick + 1)
+        else void fetchNow()
+      }
     }, POLL_MS)
     return () => {
       live.cancelled = true

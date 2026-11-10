@@ -159,6 +159,46 @@ describe('overview part lifecycle', () => {
     await second.m.unmount()
   })
 
+  test('relative scopes read cold after midnight even when another client already served the new day', async () => {
+    vi.useFakeTimers()
+    const mod = await fresh()
+    const before = new Date(2026, 10, 8, 23, 59, 50).getTime()
+    const midnight = new Date(2026, 10, 9).getTime()
+    for (const range of ['today', '7d', '30d'] as const) {
+      vi.setSystemTime(before)
+      const calls = stubRoutes(call => call.body.revision === 'r1'
+        ? { revision: 'r1', unchanged: true }
+        : summaryValue({ summary: summaryRaw({ sessions: Date.now() < midnight ? 1 : 0 }) }))
+      const probe = await mountSummary(mod, { range })
+      await advance(0)
+      assert.equal(lastOf(probe.states).data?.summary.sessions, 1)
+      await advance(POLL_MS)
+      await advance(1)
+      assert.equal(lastOf(probe.states).data?.summary.sessions, 0, 'the new local day is read even when the host returns unchanged to old revisions')
+      assert.deepEqual(calls.at(-1)?.body, { part: 'summary', scope: { range }, revision: null }, 'the new day reads cold without changing the wire request')
+      await probe.m.unmount()
+    }
+  })
+
+  test('all and fixed scopes keep their cached revision across midnight', async () => {
+    vi.useFakeTimers()
+    const mod = await fresh()
+    for (const range of ['all', { start: 1, end: 2 }] as const) {
+      vi.setSystemTime(new Date(2026, 10, 8, 23, 59, 50))
+      stubRoutes(() => summaryValue())
+      const first = await mountSummary(mod, { range })
+      await advance(0)
+      await first.m.unmount()
+      vi.setSystemTime(new Date(2026, 10, 9, 0, 0, 20))
+      const calls = stubRoutes(() => ({ revision: 'r1', unchanged: true }))
+      const next = await mountSummary(mod, { range })
+      await advance(0)
+      assert.equal(calls[0]?.body.revision, 'r1')
+      assert.equal(lastOf(next.states).data?.summary.sessions, 2)
+      await next.m.unmount()
+    }
+  })
+
   test('the result cache stays within the retention entry budget', async () => {
     vi.useFakeTimers()
     const mod = await fresh()
