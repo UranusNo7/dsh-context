@@ -350,7 +350,7 @@ describe('useFleetDetails — progressive family loading', () => {
     vi.spyOn(cache, 'fetchSummary').mockResolvedValue(rootSummary())
     const batch = vi.spyOn(cache, 'fetchBatch').mockImplementation((ids) => {
       const rows: Record<string, FleetDetail> = {}
-      for (const id of ids) rows[id] = detailWith({ messagesTotal: 1 })
+      for (const id of ids) rows[id] = detailWith({ messagesTotal: 1, messages: [{ seq: 1, time: 1, kind: 'relay', text: 'loaded' }] })
       return Promise.resolve(batchOf(rows))
     })
     const { box, Probe } = probeDetails(cache)
