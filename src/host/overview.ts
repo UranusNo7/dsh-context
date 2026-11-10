@@ -13,6 +13,8 @@ import type {
   OverviewTallyField,
   OverviewValue,
 } from '../shared/types'
+import { ACTIVITY_STATE_VERSION } from './activity'
+import { TIMELINE_STATE_VERSION } from './timeline'
 import type { BackfillHandle } from './backfill'
 import type { CostSource } from './cost'
 import type { CachedSnapshotFace, SessionQueryFace, SnapshotProjectionsFace } from './faces'
@@ -293,14 +295,16 @@ export function watchOverviewRoute(
   let cache: OverviewCache | null = options.cache ?? null
   const cacheOf = (): OverviewCache => {
     if (cache === null) {
+      const generation = `${ACTIVITY_STATE_VERSION}.${TIMELINE_STATE_VERSION}`
       cache = options.databasePath !== undefined
         ? createOverviewDatabaseCache({
           path: options.databasePath,
+          generation,
           ...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
         })
         : options.database === false || options.cachePath !== undefined
-          ? createOverviewCache(options.cachePath === undefined ? {} : { path: options.cachePath })
-          : createOverviewDatabaseCache({})
+          ? createOverviewCache({ generation, ...(options.cachePath === undefined ? {} : { path: options.cachePath }) })
+          : createOverviewDatabaseCache({ generation })
     }
     return cache
   }

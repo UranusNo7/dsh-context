@@ -69,6 +69,7 @@ export interface OverviewCacheOptions {
   now?: () => number
   debounceMs?: number
   statConcurrency?: number
+  generation?: string
 }
 
 export interface OverviewCache {
@@ -281,12 +282,18 @@ export function createOverviewCache(options: OverviewCacheOptions = {}): Overvie
   const now = options.now ?? (() => Date.now())
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS
   const statConcurrency = options.statConcurrency ?? DEFAULT_STAT_CONCURRENCY
+  const generation = options.generation
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending: CachedSession[] | null = null
   let disposed = false
 
   const write = async (records: readonly CachedSession[]): Promise<void> => {
-    const body = JSON.stringify({ format: OVERVIEW_CACHE_FORMAT, savedAt: now(), sessions: records })
+    const body = JSON.stringify({
+      format: OVERVIEW_CACHE_FORMAT,
+      ...(generation === undefined ? {} : { generation }),
+      savedAt: now(),
+      sessions: records,
+    })
     const temp = `${path}.tmp`
     try {
       await fs.mkdir(dirname(path))
@@ -318,6 +325,9 @@ export function createOverviewCache(options: OverviewCacheOptions = {}): Overvie
     try {
       file = JSON.parse(await fs.readFile(path))
     } catch {
+      return { sessions: new Map(), identities: new Map(), rebuild: new Set() }
+    }
+    if (generation !== undefined && asRecord(file)?.generation !== generation) {
       return { sessions: new Map(), identities: new Map(), rebuild: new Set() }
     }
     const records = parsedRecords(file)

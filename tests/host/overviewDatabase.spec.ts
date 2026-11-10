@@ -366,4 +366,58 @@ describe('dsh-context overview database', () => {
     assert.equal(overviewDatabasePath({ DSH_HOME: 'C:/data' }, 'C:/home'), join('C:/data', 'storages', 'dsh-context', 'overview-stats.v1.sqlite'))
     assert.equal(overviewDatabasePath({}, 'C:/home'), join('C:/home', '.dsh', 'storages', 'dsh-context', 'overview-stats.v1.sqlite'))
   })
+
+  test('a cache generation discards older derived rows and gates the revision until the next sync', async () => {
+    const dir = tempDir()
+    const path = join(dir, 'generation.sqlite')
+    const logPath = join(dir, 'session.jsonl')
+    writeFileSync(logPath, 'abc')
+    const info = statSync(logPath)
+    const identity = { path: logPath, sizeBytes: info.size, mtimeMs: info.mtimeMs }
+    const session = sessionOf('root', { days: { '2026-11-01': { tokens: 4, requests: 1, tools: { run_code: { n: 1, last: 1 } } } } })
+    const first = assertOpened(openOverviewDatabase({ path, generation: '6.41' }))
+    first.save([cachedOf(session, identity)])
+    first.syncRows([rowOf(session)], 'r1')
+    first.close()
+    const upgraded = assertOpened(openOverviewDatabase({ path, generation: '7.42' }))
+    assert.equal(upgraded.revision, null, 'an older generation never serves the stored revision')
+    assert.equal((upgraded.get('SELECT COUNT(*) AS n FROM cache_session') as { n: number } | undefined)?.n, 0)
+    assert.equal((upgraded.get('SELECT COUNT(*) AS n FROM root_row') as { n: number } | undefined)?.n, 1, 'the rows wait for a sync instead of answering queries')
+    const stale = await upgraded.load(new Set(['root']))
+    assert.equal(stale.sessions.size, 0)
+    assert.equal(stale.rebuild.size, 0)
+    const rebuilt = sessionOf('root', { days: { '2026-11-01': { tokens: 4, requests: 1, tools: { read: { n: 1, last: 1 } } } } })
+    upgraded.syncRows([rowOf(rebuilt)], 'r2')
+    assert.equal(upgraded.revision, 'r2')
+    upgraded.close()
+    const matched = assertOpened(openOverviewDatabase({ path, generation: '7.42' }))
+    assert.equal(matched.revision, 'r2', 'the same generation keeps the committed revision')
+    matched.close()
+    const unconfigured = assertOpened(openOverviewDatabase({ path }))
+    assert.equal(unconfigured.revision, 'r2', 'an unconfigured store is untouched by the gate')
+    unconfigured.close()
+  })
+
+  test('a failing generation clear rolls back and never adopts the store', () => {
+    const dir = tempDir()
+    const path = join(dir, 'blocked.sqlite')
+    const first = assertOpened(openOverviewDatabase({ path }))
+    first.save([cachedOf(sessionOf('root'), null)])
+    first.close()
+    const require = createRequire(import.meta.url)
+    const sqlite = require('node:sqlite') as {
+      DatabaseSync: new (path: string) => {
+        exec(sql: string): void
+        prepare(sql: string): { get(...params: unknown[]): unknown }
+        close(): void
+      }
+    }
+    const raw = new sqlite.DatabaseSync(path)
+    raw.exec("CREATE TRIGGER block_clear BEFORE DELETE ON cache_session BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+    raw.close()
+    assert.equal(openOverviewDatabase({ path, generation: 'next' }), null)
+    const check = new sqlite.DatabaseSync(path)
+    assert.equal((check.prepare('SELECT COUNT(*) AS n FROM cache_session').get() as { n: number }).n, 1, 'the clear rolled back')
+    check.close()
+  })
 })

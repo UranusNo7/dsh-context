@@ -44,6 +44,7 @@ export interface OverviewStatsDatabase extends OverviewDatabaseRows {
 
 export interface OverviewDatabaseOptions {
   path?: string
+  generation?: string
 }
 
 interface SqliteStatement {
@@ -67,6 +68,8 @@ const STAT_CONCURRENCY = 4
 const LOAD_CHUNK_SIZE = 400
 
 const META_REVISION = 'stats_revision'
+
+const META_GENERATION = 'stats_generation'
 
 const META_OWNER = 'owner'
 
@@ -198,6 +201,21 @@ function initializeSchema(db: SqliteDatabase): void {
   }
 }
 
+function applyGeneration(db: SqliteDatabase, generation: string | undefined): void {
+  if (generation === undefined || metaValueOf(db, META_GENERATION) === generation) return
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    db.prepare('DELETE FROM cache_session').run()
+    db.prepare('DELETE FROM meta WHERE key = ?').run(META_REVISION)
+    db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+      .run(META_GENERATION, generation)
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+}
+
 export function openOverviewDatabase(options: OverviewDatabaseOptions = {}): OverviewStatsDatabase | null {
   const sqlite = sqliteModule()
   if (sqlite === null) return null
@@ -240,6 +258,7 @@ export function openOverviewDatabase(options: OverviewDatabaseOptions = {}): Ove
       db.exec('PRAGMA busy_timeout = 0')
       db.exec('PRAGMA foreign_keys = ON')
     }
+    applyGeneration(db, options.generation)
   } catch {
     try {
       db.close()

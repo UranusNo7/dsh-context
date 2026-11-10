@@ -6,6 +6,7 @@ export interface OverviewDatabaseCacheOptions {
   cachePath?: string
   debounceMs?: number
   database?: OverviewStatsDatabase | null
+  generation?: string
 }
 
 export interface OverviewDatabaseCache extends OverviewCache {
@@ -16,7 +17,10 @@ const DEFAULT_DEBOUNCE_MS = 2_000
 
 export function createOverviewDatabaseCache(options: OverviewDatabaseCacheOptions = {}): OverviewDatabaseCache {
   let database = options.database === undefined
-    ? openOverviewDatabase(options.path === undefined ? {} : { path: options.path })
+    ? openOverviewDatabase({
+      ...(options.path === undefined ? {} : { path: options.path }),
+      ...(options.generation === undefined ? {} : { generation: options.generation }),
+    })
     : options.database
   let fallback: OverviewCache | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -27,6 +31,7 @@ export function createOverviewDatabaseCache(options: OverviewDatabaseCacheOption
     fallback ??= createOverviewCache({
       ...(options.cachePath === undefined ? {} : { path: options.cachePath }),
       ...(options.debounceMs === undefined ? {} : { debounceMs: options.debounceMs }),
+      ...(options.generation === undefined ? {} : { generation: options.generation }),
     })
     return fallback
   }
