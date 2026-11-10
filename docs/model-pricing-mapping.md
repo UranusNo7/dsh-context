@@ -19,7 +19,9 @@ Cost is estimated from [models.dev](https://models.dev) list prices. It is a ref
 
 A known provider branch keeps its own rate. A single-vendor branch never borrows another vendor's price; a multi-vendor branch (Azure, Vertex, Cloudflare AI Gateway, OpenRouter, Vercel, OpenCode) may fall through to the maker. The “maker” is the lab named by models.dev's `canonical_model_id`, e.g. `anthropic` in `anthropic/claude-sonnet-5-5`.
 
-Coding/token plan branches are subscription entitlements; models.dev lists them at **0 per-token** cost. They are excluded from per-token pricing, so their routes fall through to the maker's list price as a reference.
+Coding/token plan branches are subscription entitlements; models.dev lists them at **0 per-token** cost. They and the `commandgoat` subscription route use the maker's public list price as a reference, never the subscription charge or a carrier-only fallback. If the maker cannot be resolved, the model remains unpriced.
+
+Maker branches also match their own `canonical_model_id` after ordinary model-ID lookups miss. An undated model may match the maker's dated canonical release (MMDD, YYMMDD or YYYYMMDD); explicit different releases and billing variants are not stripped by this fallback. Conflicting maker rates remain unpriced. For example, `commandgoat` / `deepseek/deepseek-v4.1-flash` resolves to the official `deepseek-flash` listing whose canonical ID is `deepseek/deepseek-v4.1-flash-1017`. Subscription model rows label the result as an official reference price.
 
 ## Examples
 

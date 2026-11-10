@@ -105,7 +105,7 @@ export function suffixKeys(key: string): string[] {
 }
 
 export function isSubscriptionPlanProvider(pid: string): boolean {
-  return /(?:^|-)(?:coding|code|token)-plan(?:-|$)/.test(pid.toLowerCase())
+  return pid.toLowerCase() === 'commandgoat' || /(?:^|-)(?:coding|code|token)-plan(?:-|$)/.test(pid.toLowerCase())
 }
 
 export function familyVendorOf(model: string): string | undefined {

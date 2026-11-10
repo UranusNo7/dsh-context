@@ -47,6 +47,21 @@ describe('OverviewModels', () => {
     await m.unmount()
   })
 
+  test('subscription prices are labelled as official references without changing tokens or currency conversion', async () => {
+    const models = MODELS.map(row => ({ ...row, provider: 'commandgoat' }))
+    for (const currency of ['usd', 'cny'] as const) {
+      const m = await mount(h(OverviewModels, { models, currency }))
+      const rows = rowsOf(m.container)
+      const reference = rows[0].querySelector('.lc-ov-models-cost .lc-ov-models-provider')
+      assert.equal(reference?.textContent, DICT_EN['ov.models.reference'])
+      assert.equal(cellsOf(rows[0])[6], (currency === 'usd' ? '$1.50' : '¥10.00') + DICT_EN['ov.models.reference'])
+      assert.equal(cellsOf(rows[0])[5], '7.4k')
+      assert.equal(rows[1].querySelector('.lc-ov-models-cost .lc-ov-models-provider'), null)
+      assert.equal(cellsOf(rows[1])[6], '—')
+      await m.unmount()
+    }
+  })
+
   test('an unpriced model shows — and the currency preference converts only priced rows', async () => {
     const usd = await mount(h(OverviewModels, { models: MODELS, currency: 'usd' }))
     assert.deepEqual(cellsOf(rowsOf(usd.container)[1]), ['vendor/unknown-modelopenrouter', '300', '0', '0', '100', '400', '—'])

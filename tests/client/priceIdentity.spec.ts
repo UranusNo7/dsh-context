@@ -72,6 +72,8 @@ describe('suffix and form helpers', () => {
 
 describe('isSubscriptionPlanProvider', () => {
   test('recognizes plan branches but not ordinary routes or subscription products', () => {
+    assert.equal(isSubscriptionPlanProvider('commandgoat'), true)
+    assert.equal(isSubscriptionPlanProvider('CommandGoat'), true)
     assert.equal(isSubscriptionPlanProvider('kimi-code-plan-global'), true)
     assert.equal(isSubscriptionPlanProvider('zai-coding-plan'), true)
     assert.equal(isSubscriptionPlanProvider('alibaba-token-plan-cn'), true)

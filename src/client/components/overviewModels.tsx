@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { formatCost, toCurrency, type CostCurrency } from '../cost'
 import type { OverviewModelUsage } from '../../shared/types'
+import { isSubscriptionPlanProvider } from '../../shared/priceIdentity'
 import type { ViewKit } from '../viewkit'
 import { IconDatabase } from '../primitives'
 
@@ -46,7 +47,12 @@ export function makeOverviewModels(kit: ViewKit): (props: OverviewModelsProps) =
                 <td data-label={t('ov.models.cacheWrite')} className="lc-ov-models-num">{fmt(row.cacheWriteTokens)}</td>
                 <td data-label={t('ov.models.output')} className="lc-ov-models-num">{fmt(row.outputTokens)}</td>
                 <td data-label={t('ov.models.total')} className="lc-ov-models-num">{fmt(row.totalTokens)}</td>
-                <td data-label={t('ov.models.cost')} className="lc-ov-models-num lc-ov-models-cost">{money(row.costUsd)}</td>
+                <td data-label={t('ov.models.cost')} className="lc-ov-models-num lc-ov-models-cost">
+                  {money(row.costUsd)}
+                  {row.costUsd !== null && isSubscriptionPlanProvider(row.provider) && (
+                    <span className="lc-ov-models-provider">{t('ov.models.reference')}</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
